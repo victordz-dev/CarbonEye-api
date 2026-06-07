@@ -1,0 +1,107 @@
+[
+  {
+    "longitude": -47.0200,
+    "latitude": -22.9200,
+    "monthsAgo": 2,
+    "satelite": "VIIRS",
+    "confianca": 85
+  },
+  {
+    "longitude": -46.9800,
+    "latitude": -22.8800,
+    "monthsAgo": 4,
+    "satelite": "MODIS",
+    "confianca": 90
+  },
+  {
+    "longitude": -47.0150,
+    "latitude": -22.9150,
+    "monthsAgo": 1,
+    "satelite": "VIIRS",
+    "confianca": 88
+  },
+  {
+    "longitude": -47.0250,
+    "latitude": -22.9250,
+    "monthsAgo": 3,
+    "satelite": "VIIRS",
+    "confianca": 92
+  },
+  {
+    "longitude": -46.6200,
+    "latitude": -23.4100,
+    "monthsAgo": 1,
+    "satelite": "VIIRS",
+    "confianca": 95
+  },
+  {
+    "longitude": -46.6400,
+    "latitude": -23.4300,
+    "monthsAgo": 2,
+    "satelite": "MODIS",
+    "confianca": 80
+  },
+  {
+    "longitude": -62.5500,
+    "latitude": 2.5500,
+    "monthsAgo": 5,
+    "satelite": "VIIRS",
+    "confianca": 87
+  },
+  {
+    "longitude": -62.4500,
+    "latitude": 2.4500,
+    "monthsAgo": 6,
+    "satelite": "MODIS",
+    "confianca": 91
+  },
+  {
+    "longitude": -48.0000,
+    "latitude": -21.0000,
+    "monthsAgo": 1,
+    "satelite": "VIIRS",
+    "confianca": 95
+  },
+  {
+    "longitude": -47.0300,
+    "latitude": -22.9300,
+    "monthsAgo": 1,
+    "satelite": "VIIRS",
+    "confianca": 90
+  },
+  {
+    "longitude": -47.0100,
+    "latitude": -22.9100,
+    "monthsAgo": 2,
+    "satelite": "MODIS",
+    "confianca": 78
+  },
+  {
+    "longitude": -46.6100,
+    "latitude": -23.4000,
+    "monthsAgo": 3,
+    "satelite": "VIIRS",
+    "confianca": 85
+  },
+  {
+    "longitude": -46.6300,
+    "latitude": -23.4200,
+    "monthsAgo": 4,
+    "satelite": "VIIRS",
+    "confianca": 92
+  },
+  {
+    "longitude": -62.6000,
+    "latitude": 2.6000,
+    "monthsAgo": 2,
+    "satelite": "MODIS",
+    "confianca": 89
+  },
+  {
+    "longitude": -62.4000,
+    "latitude": 2.4000,
+    "monthsAgo": 3,
+    "satelite": "VIIRS",
+    "confianca": 94
+  }
+]
