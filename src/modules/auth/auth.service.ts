@@ -120,8 +120,13 @@ export class AuthService {
     };
   }
 
-  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<AuthResponse> {
-    const usuario = await this.usuarioRepository.findOne({ where: { id: userId } });
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<AuthResponse> {
+    const usuario = await this.usuarioRepository.findOne({
+      where: { id: userId },
+    });
     if (!usuario) {
       throw new UnauthorizedException('Usuário não encontrado.');
     }
@@ -133,7 +138,9 @@ export class AuthService {
     // Se houver tentativa de mudar email ou senha, precisa validar a senha atual
     if (dto.email || dto.novaSenha) {
       if (!dto.senhaAtual) {
-        throw new UnauthorizedException('A senha atual é obrigatória para alterar e-mail ou senha.');
+        throw new UnauthorizedException(
+          'A senha atual é obrigatória para alterar e-mail ou senha.',
+        );
       }
 
       const senhaValida = await bcrypt.compare(dto.senhaAtual, usuario.senha);
@@ -142,9 +149,13 @@ export class AuthService {
       }
 
       if (dto.email && dto.email !== usuario.email) {
-        const emailExiste = await this.usuarioRepository.findOne({ where: { email: dto.email } });
+        const emailExiste = await this.usuarioRepository.findOne({
+          where: { email: dto.email },
+        });
         if (emailExiste) {
-          throw new ConflictException('O novo e-mail já está em uso por outro usuário.');
+          throw new ConflictException(
+            'O novo e-mail já está em uso por outro usuário.',
+          );
         }
         usuario.email = dto.email;
       }
@@ -187,7 +198,7 @@ export class AuthService {
     if (!usuario) {
       throw new NotFoundException('Usuário não encontrado.');
     }
-    
+
     // Soft delete do usuário
     await this.usuarioRepository.softDelete(id);
 

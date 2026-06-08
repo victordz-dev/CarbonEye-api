@@ -30,7 +30,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async updateProfile(
     @Req() req: Request,
-    @Body() dto: UpdateProfileDto
+    @Body() dto: UpdateProfileDto,
   ): Promise<AuthResponse> {
     const userId = (req.user as any).id;
     return this.authService.updateProfile(userId, dto);

@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Area } from '../../entities/area.entity';
 import { HistoricoSiri } from '../../entities/historicosiri.entity';
 import { Alerta } from '../../entities/alerta.entity';
@@ -23,40 +23,17 @@ import { NivelLog, OrigemLog } from '../../entities/sistemalog.entity';
 import { SalvarAreaDto } from './dto/salvar-area.dto';
 import { AlternarMonitoramentoDto } from './dto/alternar-monitoramento.dto';
 import { Polygon } from 'geojson';
-import PDFDocument from 'pdfkit';
+import {
+  TAMANHO_MINIMO_HA,
+  COTA_MAXIMA_USUARIO_HA,
+  CONVERSAO_M2_HA,
+  RAIO_FOCOS_HORAS,
+} from './areas.constants';
 
-export interface AnalisarAreaResponse {
-  status_territorial: string;
-  classificacao_final: string;
-  agro_polygon_id?: string;
-  siri?: {
-    pontuacao_total: number;
-    detalhes: {
-      vegetacao: number;
-      historico: number;
-      incendios: number;
-      clima: number;
-    };
-  };
-  area_m2?: number;
-  clima_atual?: {
-    temp: number;
-    umidade: number;
-  };
-  imagem_satelite_url?: string;
-  motivo?: string;
-}
-
-export interface HistoricoAreaResponse {
-  linha_do_tempo_ndvi: Array<{ data: string; valor: number }>;
-  ocorrencias_incendio: number;
-  evi_atual?: number;
-  ndwi_atual?: number;
-  umidade_solo?: number;
-  temp_solo?: number;
-  imagem_satelite_truecolor?: string;
-  imagem_satelite_ndvi?: string;
-}
+import {
+  AnalisarAreaResponse,
+  HistoricoAreaResponse,
+} from './areas.interfaces';
 
 @Injectable()
 export class AreasService {
@@ -73,6 +50,7 @@ export class AreasService {
     private readonly siriService: SiriService,
     private readonly integrationsService: IntegrationsService,
     private readonly logsService: LogsService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -108,30 +86,28 @@ export class AreasService {
         [wkt],
       )) as unknown as { area_m2: string }[];
       const areaM2 = parseFloat(areaResult[0].area_m2);
-      const areaHa = areaM2 / 10000;
+      const areaHa = areaM2 / CONVERSAO_M2_HA;
 
-      // Valida teto mínimo por consulta: 1 hectare (10.000 m²) exigido pelo AgroMonitoring
-      if (areaHa < 1) {
+      // Valida teto mínimo por consulta
+      if (areaHa < TAMANHO_MINIMO_HA) {
         throw new BadRequestException(
-          `A área desenhada possui apenas ${areaHa.toFixed(2)} hectares. O tamanho mínimo suportado pelo satélite é de 1.00 hectare.`,
+          `A área desenhada possui apenas ${areaHa.toFixed(2)} hectares. O tamanho mínimo suportado pelo satélite é de ${TAMANHO_MINIMO_HA.toFixed(2)} hectare.`,
         );
       }
 
-      // Check total global user quota (50ha)
+      // Check total global user quota
       const totalAreaResult = await this.areaRepository.query(
         'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1',
-        [usuarioId]
+        [usuarioId],
       );
       const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
-      const totalUserHa = totalUserM2 / 10000;
+      const totalUserHa = totalUserM2 / CONVERSAO_M2_HA;
 
-      if (totalUserHa + areaHa > 50) {
+      if (totalUserHa + areaHa > COTA_MAXIMA_USUARIO_HA) {
         throw new BadRequestException(
-          `Cota global excedida. Você já possui ${totalUserHa.toFixed(2)} ha salvos. O limite da conta é de 50 ha.`,
+          `Cota global excedida. Você já possui ${totalUserHa.toFixed(2)} ha salvos. O limite da conta é de ${COTA_MAXIMA_USUARIO_HA} ha.`,
         );
       }
-
-
 
       // 3. Validação territorial PostGIS (TI / UC)
       const sobreposicao = await this.geoService.verificarSobreposicao(coords);
@@ -145,11 +121,8 @@ export class AreasService {
 
       // 4. Integração com APIs externas para cálculo do SIRI (Área Livre)
       const mockName = `Triagem_Temp_${Date.now()}`;
-      polyId = await this.integrationsService.criarPoligono(
-        coords,
-        mockName,
-      );
-      
+      polyId = await this.integrationsService.criarPoligono(coords, mockName);
+
       const siri = await this.siriService.calcularSiri(coords, polyId);
 
       return {
@@ -169,10 +142,16 @@ export class AreasService {
     } catch (error) {
       // Rollback imediato: Se o polígono foi criado na API mas a análise falhou (ex: timeout), deleta ele imediatamente.
       if (polyId) {
-        this.logger.log(`Rollback: Deletando polígono ${polyId} devido à falha na análise.`);
-        await this.integrationsService.deletarPoligono(polyId).catch(e => 
-          this.logger.error(`Falha no rollback do polígono ${polyId}: ${e.message}`)
+        this.logger.log(
+          `Rollback: Deletando polígono ${polyId} devido à falha na análise.`,
         );
+        await this.integrationsService
+          .deletarPoligono(polyId)
+          .catch((e) =>
+            this.logger.error(
+              `Falha no rollback do polígono ${polyId}: ${e.message}`,
+            ),
+          );
       }
 
       if (error instanceof BadRequestException) {
@@ -192,6 +171,10 @@ export class AreasService {
     usuarioId: string,
     dto: SalvarAreaDto,
   ): Promise<{ id: string; mensagem: string }> {
+    let polyId = dto.agro_polygon_id;
+    let siri = dto.siri_completo;
+    let areaSalva: Area | undefined;
+
     try {
       const dentroBrasil = await isExatamenteNoBrasil(dto.poligono);
       if (!dentroBrasil) {
@@ -202,35 +185,32 @@ export class AreasService {
 
       const wkt = coordenadasParaWktPolygon(dto.poligono);
 
-      // 2. Calcula e valida área novamente antes de salvar (defesa)
       const areaResult = (await this.areaRepository.query(
         'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
         [wkt],
       )) as unknown as { area_m2: string }[];
       const areaM2 = parseFloat(areaResult[0].area_m2);
-      const areaHa = areaM2 / 10000;
+      const areaHa = areaM2 / CONVERSAO_M2_HA;
 
-      if (areaHa < 1) {
+      if (areaHa < TAMANHO_MINIMO_HA) {
         throw new BadRequestException(
-          'A área é menor que o limite mínimo de 1 hectare suportado pelo satélite.',
+          `A área é menor que o limite mínimo de ${TAMANHO_MINIMO_HA} hectare suportado pelo satélite.`,
         );
       }
 
-      // Check total global user quota (50ha)
       const totalAreaResult = await this.areaRepository.query(
         'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1',
-        [usuarioId]
+        [usuarioId],
       );
       const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
-      const totalUserHa = totalUserM2 / 10000;
+      const totalUserHa = totalUserM2 / CONVERSAO_M2_HA;
 
-      if (totalUserHa + areaHa > 50) {
+      if (totalUserHa + areaHa > COTA_MAXIMA_USUARIO_HA) {
         throw new BadRequestException(
-          `Cota global excedida. Você já possui ${totalUserHa.toFixed(2)} ha salvos. O limite da conta é de 50 ha.`,
+          `Cota global excedida. Você já possui ${totalUserHa.toFixed(2)} ha salvos. O limite da conta é de ${COTA_MAXIMA_USUARIO_HA} ha.`,
         );
       }
 
-      // 3. Validação territorial (defesa)
       const sobreposicao = await this.geoService.verificarSobreposicao(
         dto.poligono,
       );
@@ -240,21 +220,17 @@ export class AreasService {
         );
       }
 
-      // 4. Criação definitiva no AgroMonitoring
-      let polyId = dto.agro_polygon_id;
       if (!polyId) {
         polyId = await this.integrationsService.criarPoligono(
           dto.poligono,
           dto.nome,
         );
       }
-      
-      let siri = dto.siri_completo;
+
       if (!siri) {
         siri = await this.siriService.calcularSiri(dto.poligono, polyId);
       }
 
-      // Converte coordenadas para o formato GeoJSON Polygon
       const formattedCoords = dto.poligono.map((c) => [
         c.longitude,
         c.latitude,
@@ -267,7 +243,6 @@ export class AreasService {
         coordinates: [formattedCoords],
       };
 
-      // 5. Persiste a área no banco
       const novaArea = this.areaRepository.create({
         usuarioId,
         nome: dto.nome,
@@ -285,11 +260,7 @@ export class AreasService {
         ultimaAnalise: new Date(),
       });
 
-      const areaSalva = await this.areaRepository.save(novaArea);
-
-      // 6. Persiste o registro de histórico SIRI inicial
       const historico = this.historicoRepository.create({
-        areaId: areaSalva.id,
         notaVegetacao: siri.detalhes.vegetacao,
         notaHistoricoNdvi: siri.detalhes.historico,
         notaIncendios: siri.detalhes.incendios,
@@ -297,15 +268,21 @@ export class AreasService {
         pontuacaoTotal: siri.pontuacaoTotal,
         classificacaoGeral: siri.classificacao,
       });
-      await this.historicoRepository.save(historico);
 
-      // 7. Salva snapshot e remove da API AgroMonitoring se não for para manter ativo
-      if (!dto.monitoramento_ativo && polyId) {
+      // Transação Controlada
+      await this.dataSource.transaction(async (manager) => {
+        areaSalva = await manager.save(Area, novaArea);
+        historico.areaId = areaSalva.id;
+        await manager.save(HistoricoSiri, historico);
+      });
+
+      if (areaSalva && !dto.monitoramento_ativo && polyId) {
         try {
           const snapshot = await this.gerarSnapshot(polyId, dto.poligono);
           areaSalva.snapshotDetalhes = snapshot;
           await this.areaRepository.save(areaSalva);
           await this.integrationsService.deletarPoligono(polyId);
+          polyId = undefined; // Nullify since we deleted it
         } catch (e) {
           console.warn('Falha ao deletar polígono descartável na API:', e);
         }
@@ -316,10 +293,23 @@ export class AreasService {
       });
 
       return {
-        id: areaSalva.id,
+        id: areaSalva!.id,
         mensagem: `Área salva com sucesso. ${ativosCount} de 2 mapas em monitoramento.`,
       };
     } catch (error) {
+      if (polyId && !dto.agro_polygon_id) {
+        this.logger.log(
+          `Rollback externo: Deletando polígono ${polyId} devido à falha ao salvar no banco.`,
+        );
+        await this.integrationsService
+          .deletarPoligono(polyId)
+          .catch((e) =>
+            this.logger.error(
+              `Falha no rollback do polígono ${polyId}: ${e.message}`,
+            ),
+          );
+      }
+
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -357,7 +347,7 @@ export class AreasService {
 
     const geoResult = await this.areaRepository.query(
       'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-      [area.id]
+      [area.id],
     );
     const geojson = JSON.parse(geoResult[0].geojson);
     const coords: Coordenada[] = geojson.coordinates[0].map((pt: number[]) => ({
@@ -372,7 +362,10 @@ export class AreasService {
     return this.gerarSnapshot(area.agroPolygonId || '', coords);
   }
 
-  private async gerarSnapshot(agroPolygonId: string, coords: Coordenada[]): Promise<HistoricoAreaResponse> {
+  private async gerarSnapshot(
+    agroPolygonId: string,
+    coords: Coordenada[],
+  ): Promise<HistoricoAreaResponse> {
     if (!agroPolygonId) {
       return {
         linha_do_tempo_ndvi: [],
@@ -382,18 +375,24 @@ export class AreasService {
       };
     }
 
-    const rawNdviValores = await this.integrationsService.obterHistoricoNdvi(agroPolygonId);
-    const indicesExtra = await this.integrationsService.obterIndicesRecentes(agroPolygonId);
-    const dadosSolo = await this.integrationsService.obterDadosSolo(agroPolygonId);
-    const quantidadeFocos = await this.geoService.obterQuantidadeFocosNoEntorno(coords, 12);
+    const rawNdviValores =
+      await this.integrationsService.obterHistoricoNdvi(agroPolygonId);
+    const indicesExtra =
+      await this.integrationsService.obterIndicesRecentes(agroPolygonId);
+    const dadosSolo =
+      await this.integrationsService.obterDadosSolo(agroPolygonId);
+    const quantidadeFocos = await this.geoService.obterQuantidadeFocosNoEntorno(
+      coords,
+      RAIO_FOCOS_HORAS,
+    );
 
     const ndviMensalMap = new Map<string, { soma: number; qtd: number }>();
-    
+
     rawNdviValores.forEach((item) => {
       if (item.valor >= 0.1) {
         const d = new Date(item.dataUnix * 1000);
-        const mesAno = d.toISOString().substring(0, 7) + '-01'; 
-        
+        const mesAno = d.toISOString().substring(0, 7) + '-01';
+
         const atual = ndviMensalMap.get(mesAno) || { soma: 0, qtd: 0 };
         ndviMensalMap.set(mesAno, {
           soma: atual.soma + item.valor,
@@ -452,20 +451,28 @@ export class AreasService {
       // Obter coordenadas para gerar o snapshot
       const geoResult = await this.areaRepository.query(
         'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-        [area.id]
+        [area.id],
       );
       const geojson = JSON.parse(geoResult[0].geojson);
-      const coords: Coordenada[] = geojson.coordinates[0].map((pt: number[]) => ({
-        longitude: pt[0],
-        latitude: pt[1],
-      }));
+      const coords: Coordenada[] = geojson.coordinates[0].map(
+        (pt: number[]) => ({
+          longitude: pt[0],
+          latitude: pt[1],
+        }),
+      );
 
       // Gera o snapshot
       try {
-        const snapshot = await this.gerarSnapshot(area.agroPolygonId || '', coords);
+        const snapshot = await this.gerarSnapshot(
+          area.agroPolygonId || '',
+          coords,
+        );
         area.snapshotDetalhes = snapshot;
       } catch (e) {
-        console.warn('Não foi possível gerar o snapshot ao desativar monitoramento', e);
+        console.warn(
+          'Não foi possível gerar o snapshot ao desativar monitoramento',
+          e,
+        );
       }
 
       // Exclui da API para economizar limites
@@ -473,7 +480,10 @@ export class AreasService {
         try {
           await this.integrationsService.deletarPoligono(area.agroPolygonId);
         } catch (e) {
-          console.warn('Falha ao deletar polígono da API no alternarMonitoramento:', e);
+          console.warn(
+            'Falha ao deletar polígono da API no alternarMonitoramento:',
+            e,
+          );
         }
       }
     }
@@ -486,176 +496,6 @@ export class AreasService {
         ? 'Monitoramento ativado com sucesso.'
         : 'Monitoramento pausado e snapshot gerado com sucesso.',
     };
-  }
-
-  /**
-   * Gera o laudo da área em formato PDF
-   */
-  async gerarLaudoPdf(usuarioId: string, areaId: string): Promise<Buffer> {
-    const area = await this.areaRepository.findOne({
-      where: { id: areaId, usuarioId },
-      relations: ['usuario', 'historicosSiri'],
-    });
-
-    if (!area) {
-      throw new NotFoundException('Área não encontrada.');
-    }
-
-    const geoResult = await this.areaRepository.query(
-      'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-      [area.id]
-    );
-    const geojson = JSON.parse(geoResult[0].geojson);
-    const coords: Coordenada[] = geojson.coordinates[0].map((pt: number[]) => ({
-      longitude: pt[0],
-      latitude: pt[1],
-    }));
-    const wkt = coordenadasParaWktPolygon(coords);
-
-    const areaResult = (await this.areaRepository.query(
-      'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
-      [wkt],
-    )) as unknown as { area_m2: string }[];
-    const areaM2 = parseFloat(areaResult[0].area_m2);
-    const areaHa = areaM2 / 10000;
-
-    return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50 });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', (err: Error) => reject(err));
-
-      // Logo/Header
-      doc
-        .fillColor('#0284c7')
-        .fontSize(24)
-        .font('Helvetica-Bold')
-        .text('CarbonEye', { align: 'center' });
-      doc
-        .fillColor('#475569')
-        .fontSize(12)
-        .font('Helvetica-Oblique')
-        .text('Monitoramento Territorial e Risco Ambiental', {
-          align: 'center',
-        });
-      doc.moveDown(1);
-
-      // Linha separadora
-      doc
-        .strokeColor('#e2e8f0')
-        .lineWidth(2)
-        .moveTo(50, doc.y)
-        .lineTo(562, doc.y)
-        .stroke();
-      doc.moveDown(1.5);
-
-      // Informações Gerais
-      doc
-        .fillColor('#0f172a')
-        .fontSize(16)
-        .font('Helvetica-Bold')
-        .text('1. Informações Gerais da Área');
-      doc.moveDown(0.5);
-
-      doc.fontSize(10).font('Helvetica').fillColor('#334155');
-      doc.text(`Identificador: ${area.id}`);
-      doc.text(`Nome da Área: ${area.nome}`);
-      doc.text(`Proprietário: ${area.usuario.nome} (${area.usuario.email})`);
-      doc.text(`Data de Criação: ${area.criadoEm.toLocaleDateString('pt-BR')}`);
-      doc.text(
-        `Área Total: ${areaHa.toFixed(2)} ha (${areaM2.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m²)`,
-      );
-      doc.text(
-        `Monitoramento Contínuo: ${area.monitoramentoAtivo ? 'Ativo' : 'Inativo'}`,
-      );
-      doc.moveDown(1.5);
-
-      // Status Ambiental (SIRI)
-      doc
-        .fillColor('#0f172a')
-        .fontSize(16)
-        .font('Helvetica-Bold')
-        .text('2. Diagnóstico Ambiental - Índice SIRI');
-      doc.moveDown(0.5);
-
-      const statusCls = area.classificacaoAtual || 'Não Classificado';
-      const pontuacao = area.siriAtual ?? 0;
-
-      doc.fontSize(10).font('Helvetica').fillColor('#334155');
-      doc
-        .text(`Pontuação Consolidada: `)
-        .font('Helvetica-Bold')
-        .text(`${pontuacao} / 100`, { continued: false });
-      doc
-        .font('Helvetica')
-        .text(`Classificação Final: `)
-        .font('Helvetica-Bold')
-        .text(statusCls, { continued: false });
-      doc.font('Helvetica');
-
-      // Detalhamento do histórico
-      if (area.historicosSiri && area.historicosSiri.length > 0) {
-        // Encontra o histórico mais recente
-        const ordenado = [...area.historicosSiri].sort(
-          (a, b) => b.criadoEm.getTime() - a.criadoEm.getTime(),
-        );
-        const hist = ordenado[0];
-        doc.moveDown(0.5);
-        doc
-          .font('Helvetica-Bold')
-          .text('Detalhamento dos Indicadores Ambientais:');
-        doc.font('Helvetica');
-        doc.text(`- Cobertura Vegetal (NDVI): ${hist.notaVegetacao} / 45`);
-        doc.text(
-          `- Histórico e Degradação (NDVI Sazonal): ${hist.notaHistoricoNdvi} / 30`,
-        );
-        doc.text(
-          `- Risco de Incêndios (Histórico & FIRMS 10km): ${hist.notaIncendios} / 20`,
-        );
-        doc.text(
-          `- Condição Climática (Temperatura & Umidade): ${hist.notaClima} / 5`,
-        );
-      }
-      doc.moveDown(1.5);
-
-      // Coordenadas
-      doc
-        .fillColor('#0f172a')
-        .fontSize(16)
-        .font('Helvetica-Bold')
-        .text('3. Delimitação Geográfica');
-      doc.moveDown(0.5);
-
-      doc.fontSize(9).font('Helvetica-Bold').text('Vértices do Polígono:');
-      doc.font('Helvetica').fillColor('#475569');
-      coords.forEach((c, idx) => {
-        doc.text(
-          `Ponto ${idx + 1}: Longitude ${c.longitude.toFixed(6)}, Latitude ${c.latitude.toFixed(6)}`,
-        );
-      });
-      doc.moveDown(2);
-
-      // Disclaimer
-      doc
-        .strokeColor('#e2e8f0')
-        .lineWidth(1)
-        .moveTo(50, doc.y)
-        .lineTo(562, doc.y)
-        .stroke();
-      doc.moveDown(1);
-      doc
-        .fontSize(8)
-        .fillColor('#64748b')
-        .text(
-          'Este laudo tem finalidade acadêmica e de triagem preliminar com base em dados de sensoriamento remoto de acesso público. ' +
-            'Não substitui laudos técnicos profissionais, auditorias ambientais em campo, vistorias presenciais ou pareceres oficiais das autoridades competentes.',
-          { align: 'justify' },
-        );
-
-      doc.end();
-    });
   }
 
   /**
@@ -696,12 +536,22 @@ export class AreasService {
     }
 
     const mockAlertas = [
-      { tipo: 'FOGO', msg: 'ALERTA CRÍTICO DA NASA (FIRMS): Detecção de múltiplos focos de calor nas últimas 2 horas no entorno do seu polígono. Risco de incêndio iminente.' },
-      { tipo: 'DEGRADACAO', msg: 'ALERTA DO SATÉLITE: Queda brusca no NDVI detectada na passagem de hoje. Indícios de desmatamento ou supressão vegetal acelerada.' },
-      { tipo: 'CLIMA', msg: 'ALERTA CLIMÁTICO (OpenWeather): Condições extremas de baixa umidade e alta temperatura identificadas na área, elevando o risco de perdas agrícolas e incêndios secundários.' }
+      {
+        tipo: 'FOGO',
+        msg: 'ALERTA CRÍTICO DA NASA (FIRMS): Detecção de múltiplos focos de calor nas últimas 2 horas no entorno do seu polígono. Risco de incêndio iminente.',
+      },
+      {
+        tipo: 'DEGRADACAO',
+        msg: 'ALERTA DO SATÉLITE: Queda brusca no NDVI detectada na passagem de hoje. Indícios de desmatamento ou supressão vegetal acelerada.',
+      },
+      {
+        tipo: 'CLIMA',
+        msg: 'ALERTA CLIMÁTICO (OpenWeather): Condições extremas de baixa umidade e alta temperatura identificadas na área, elevando o risco de perdas agrícolas e incêndios secundários.',
+      },
     ];
 
-    const alertaFalso = mockAlertas[Math.floor(Math.random() * mockAlertas.length)];
+    const alertaFalso =
+      mockAlertas[Math.floor(Math.random() * mockAlertas.length)];
 
     const alerta = this.alertaRepository.create({
       areaId: area.id,

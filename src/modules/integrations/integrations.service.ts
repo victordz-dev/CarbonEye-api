@@ -77,12 +77,15 @@ export class IntegrationsService {
   async criarPoligono(coords: Coordenada[], nome: string): Promise<string> {
     try {
       const formattedCoords = coords.map((c) => [c.longitude, c.latitude]);
-      
+
       // Corrigindo o bug: validando os valores reais e não as referências de memória
       const primeiroPonto = formattedCoords[0];
       const ultimoPonto = formattedCoords[formattedCoords.length - 1];
-      
-      if (primeiroPonto[0] !== ultimoPonto[0] || primeiroPonto[1] !== ultimoPonto[1]) {
+
+      if (
+        primeiroPonto[0] !== ultimoPonto[0] ||
+        primeiroPonto[1] !== ultimoPonto[1]
+      ) {
         formattedCoords.push(primeiroPonto);
       }
 
@@ -99,21 +102,23 @@ export class IntegrationsService {
             },
           },
         },
-        { timeout: 15000 } // 15s timeout
+        { timeout: 15000 }, // 15s timeout
       );
       return response.data.id;
     } catch (error: any) {
       const detalhesErro = error.response?.data || error.message;
 
-      this.logger.error(`Erro ao criar polígono no AgroMonitoring: ${JSON.stringify(detalhesErro)}`);
-      
+      this.logger.error(
+        `Erro ao criar polígono no AgroMonitoring: ${JSON.stringify(detalhesErro)}`,
+      );
+
       await this.logsService.registrarLog({
         acao: 'Falha de Integração: AgroMonitoring (Criar Polígono)',
         nivel: NivelLog.ERROR,
         origem: OrigemLog.BACKEND,
         detalhes: { error: detalhesErro, payload: { nome } },
       });
-      
+
       throw new HttpException(
         `INTEGRATION_ERROR: Falha na integração com AgroMonitoring.`,
         HttpStatus.BAD_GATEWAY,
@@ -130,9 +135,13 @@ export class IntegrationsService {
         `http://api.agromonitoring.com/agro/1.0/polygons/${polyId}?appid=${this.agroApiKey}`,
         { timeout: 30000 },
       );
-      this.logger.log(`Polígono ${polyId} excluído com sucesso do AgroMonitoring.`);
+      this.logger.log(
+        `Polígono ${polyId} excluído com sucesso do AgroMonitoring.`,
+      );
     } catch (error) {
-      this.logger.error(`Erro ao excluir polígono ${polyId} no AgroMonitoring: ${(error as Error).message}`);
+      this.logger.error(
+        `Erro ao excluir polígono ${polyId} no AgroMonitoring: ${(error as Error).message}`,
+      );
       // Não lançamos erro aqui para não travar a exclusão local caso a API deles falhe ou o ID não exista mais
     }
   }
@@ -144,7 +153,7 @@ export class IntegrationsService {
     try {
       const response = await axios.get(
         `http://api.agromonitoring.com/agro/1.0/polygons?appid=${this.agroApiKey}`,
-        { timeout: 30000 }
+        { timeout: 30000 },
       );
       if (Array.isArray(response.data)) {
         return response.data.map((poly: any) => ({
@@ -154,7 +163,9 @@ export class IntegrationsService {
       }
       return [];
     } catch (error) {
-      this.logger.error(`Erro ao obter lista de polígonos: ${(error as Error).message}`);
+      this.logger.error(
+        `Erro ao obter lista de polígonos: ${(error as Error).message}`,
+      );
       return [];
     }
   }
@@ -162,14 +173,16 @@ export class IntegrationsService {
   /**
    * Obtém a lista de médias de NDVI para o último ano (12 meses)
    */
-  async obterHistoricoNdvi(polyId: string): Promise<{ dataUnix: number; valor: number }[]> {
+  async obterHistoricoNdvi(
+    polyId: string,
+  ): Promise<{ dataUnix: number; valor: number }[]> {
     try {
       const end = Math.floor(Date.now() / 1000);
       const start = end - 365 * 24 * 60 * 60; // 1 ano
 
       const response = await axios.get<AgroNdviItem[]>(
         `http://api.agromonitoring.com/agro/1.0/ndvi/history?polyid=${polyId}&start=${start}&end=${end}&appid=${this.agroApiKey}`,
-        { timeout: 90000 } // Aumentado para 90s para dar tempo ao satélite calcular áreas grandes (sem estourar os 120s do frontend)
+        { timeout: 90000 }, // Aumentado para 90s para dar tempo ao satélite calcular áreas grandes (sem estourar os 120s do frontend)
       );
 
       if (Array.isArray(response.data)) {
@@ -184,18 +197,22 @@ export class IntegrationsService {
       this.logger.error(
         `Erro ao buscar histórico de NDVI: ${(error as Error).message}`,
       );
-      throw new Error(`O satélite não conseguiu processar o histórico dessa área a tempo. A área pode ser muito grande ou a rede está lenta.`);
+      throw new Error(
+        `O satélite não conseguiu processar o histórico dessa área a tempo. A área pode ser muito grande ou a rede está lenta.`,
+      );
     }
   }
 
   /**
    * Obtém dados atuais de umidade e temperatura do solo
    */
-  async obterDadosSolo(polyId: string): Promise<{ umidade: number; tempSuperficie: number }> {
+  async obterDadosSolo(
+    polyId: string,
+  ): Promise<{ umidade: number; tempSuperficie: number }> {
     try {
       const response = await axios.get<{ moisture: number; t0: number }>(
         `http://api.agromonitoring.com/agro/1.0/soil?polyid=${polyId}&appid=${this.agroApiKey}`,
-        { timeout: 5000 }
+        { timeout: 5000 },
       );
 
       if (response.data) {
@@ -207,7 +224,9 @@ export class IntegrationsService {
       }
       return { umidade: 0, tempSuperficie: 0 };
     } catch (error) {
-      this.logger.error(`Erro ao obter dados de solo: ${(error as Error).message}`);
+      this.logger.error(
+        `Erro ao obter dados de solo: ${(error as Error).message}`,
+      );
       return { umidade: 0, tempSuperficie: 0 };
     }
   }
@@ -224,15 +243,19 @@ export class IntegrationsService {
 
       const response = await axios.get<AgroImageItem[]>(
         `http://api.agromonitoring.com/agro/1.0/image/search?polyid=${polyId}&start=${start}&end=${end}&appid=${this.agroApiKey}`,
-        { timeout: 8000 }
+        { timeout: 8000 },
       );
 
       if (response.data && response.data.length > 0 && response.data[0].stats) {
         const stats = response.data[0].stats;
-        
+
         const [eviRes, ndwiRes] = await Promise.all([
-          axios.get<{ mean: number }>(stats.evi, { timeout: 5000 }).catch(() => ({ data: { mean: 0 } })),
-          axios.get<{ mean: number }>(stats.ndwi, { timeout: 5000 }).catch(() => ({ data: { mean: 0 } }))
+          axios
+            .get<{ mean: number }>(stats.evi, { timeout: 5000 })
+            .catch(() => ({ data: { mean: 0 } })),
+          axios
+            .get<{ mean: number }>(stats.ndwi, { timeout: 5000 })
+            .catch(() => ({ data: { mean: 0 } })),
         ]);
 
         return {
@@ -259,7 +282,7 @@ export class IntegrationsService {
     try {
       const response = await axios.get<OpenWeatherResponse>(
         `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${this.weatherApiKey}&units=metric`,
-        { timeout: 5000 }
+        { timeout: 5000 },
       );
 
       const data = response.data;
@@ -289,7 +312,7 @@ export class IntegrationsService {
       const bboxStr = `${minLon},${minLat},${maxLon},${maxLat}`;
       const response = await axios.get<string>(
         `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${this.firmsMapKey}/VIIRS_SNPP_NRT/${bboxStr}/1`,
-        { timeout: 8000 }
+        { timeout: 8000 },
       );
 
       const lines = response.data.split('\n');

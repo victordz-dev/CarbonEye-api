@@ -49,8 +49,9 @@ export class SiriService {
       this.logger.log(`Iniciando cálculo do SIRI para o polígono ${polyId}...`);
 
       // 1. Saúde da Vegetação Atual (max 45 pontos)
-      const ndviData = await this.integrationsService.obterHistoricoNdvi(polyId);
-      
+      const ndviData =
+        await this.integrationsService.obterHistoricoNdvi(polyId);
+
       // Filtra outliers (valores < 0.1) e extrai apenas os números para o cálculo SIRI
       const ndviHistory = ndviData
         .map((item) => item.valor)
@@ -59,7 +60,8 @@ export class SiriService {
       const ndviAtual =
         ndviHistory.length > 0 ? ndviHistory[ndviHistory.length - 1] : 0.75;
 
-      const indicesExtra = await this.integrationsService.obterIndicesRecentes(polyId);
+      const indicesExtra =
+        await this.integrationsService.obterIndicesRecentes(polyId);
 
       let notaVegetacao = 0;
       // Melhora a nota da vegetação combinando NDVI e EVI se o EVI for forte
@@ -142,9 +144,19 @@ export class SiriService {
       // Usando Umidade do Solo (moisture m3/m3) para ajudar na nota
       // Se umidade do solo > 0.15 e temp < 30, é ótimo.
       // Se umidade do solo < 0.05 ou temp > 35, muito ruim.
-      if (clima.umidade > 40 && clima.temp < 30 && clima.vento < 15 && dadosSolo.umidade >= 0.1) {
+      if (
+        clima.umidade > 40 &&
+        clima.temp < 30 &&
+        clima.vento < 15 &&
+        dadosSolo.umidade >= 0.1
+      ) {
         notaClima = 5; // Baixo Risco
-      } else if (clima.umidade < 20 || clima.temp > 35 || clima.vento > 30 || dadosSolo.umidade < 0.05) {
+      } else if (
+        clima.umidade < 20 ||
+        clima.temp > 35 ||
+        clima.vento > 30 ||
+        dadosSolo.umidade < 0.05
+      ) {
         notaClima = 0; // Alto Risco
       }
 

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Alerta } from '../../entities/alerta.entity';
@@ -21,7 +25,10 @@ export class AlertasService {
     });
   }
 
-  async marcarComoLida(usuarioId: string, alertaId: string): Promise<{ mensagem: string }> {
+  async marcarComoLida(
+    usuarioId: string,
+    alertaId: string,
+  ): Promise<{ mensagem: string }> {
     const alerta = await this.alertaRepository.findOne({
       where: { id: alertaId },
       relations: ['area'],
@@ -32,7 +39,9 @@ export class AlertasService {
     }
 
     if (alerta.area.usuarioId !== usuarioId) {
-      throw new UnauthorizedException('Você não tem permissão para alterar este alerta.');
+      throw new UnauthorizedException(
+        'Você não tem permissão para alterar este alerta.',
+      );
     }
 
     alerta.lida = true;
@@ -41,7 +50,10 @@ export class AlertasService {
     return { mensagem: 'Alerta marcado como lido.' };
   }
 
-  async excluirAlerta(usuarioId: string, alertaId: string): Promise<{ mensagem: string }> {
+  async excluirAlerta(
+    usuarioId: string,
+    alertaId: string,
+  ): Promise<{ mensagem: string }> {
     const alerta = await this.alertaRepository.findOne({
       where: { id: alertaId },
       relations: ['area'],
@@ -52,7 +64,9 @@ export class AlertasService {
     }
 
     if (alerta.area.usuarioId !== usuarioId) {
-      throw new UnauthorizedException('Você não tem permissão para excluir este alerta.');
+      throw new UnauthorizedException(
+        'Você não tem permissão para excluir este alerta.',
+      );
     }
 
     await this.alertaRepository.remove(alerta);

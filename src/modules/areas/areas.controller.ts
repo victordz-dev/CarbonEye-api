@@ -12,11 +12,11 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { AreasService } from './areas.service';
 import {
-  AreasService,
   AnalisarAreaResponse,
   HistoricoAreaResponse,
-} from './areas.service';
+} from './areas.interfaces';
 import { AnalisarAreaDto } from './dto/analisar-area.dto';
 import { SalvarAreaDto } from './dto/salvar-area.dto';
 import { AlternarMonitoramentoDto } from './dto/alternar-monitoramento.dto';
@@ -24,13 +24,17 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { Area } from '../../entities/area.entity';
 import type { Response } from 'express';
+import { LaudoPdfService } from './laudo-pdf.service';
 
 @ApiTags('Areas')
 @ApiBearerAuth()
 @Controller('areas')
 @UseGuards(JwtAuthGuard)
 export class AreasController {
-  constructor(private readonly areasService: AreasService) {}
+  constructor(
+    private readonly areasService: AreasService,
+    private readonly laudoPdfService: LaudoPdfService,
+  ) {}
 
   @Post('analisar')
   @HttpCode(HttpStatus.OK)
@@ -72,7 +76,10 @@ export class AreasController {
     @Param('id') areaId: string,
     @Res() res: Response,
   ): Promise<void> {
-    const pdfBuffer = await this.areasService.gerarLaudoPdf(usuarioId, areaId);
+    const pdfBuffer = await this.laudoPdfService.gerarLaudoPdf(
+      usuarioId,
+      areaId,
+    );
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="laudo-siri-${areaId}.pdf"`,

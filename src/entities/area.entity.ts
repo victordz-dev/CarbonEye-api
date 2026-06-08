@@ -12,6 +12,7 @@ import { HistoricoSiri } from './historicosiri.entity';
 import { Alerta } from './alerta.entity';
 import type { Polygon } from 'geojson';
 import { EntidadeBase } from './base.entity';
+import { HistoricoAreaResponse } from '../modules/areas/areas.interfaces';
 
 @Entity('areas')
 export class Area extends EntidadeBase {
@@ -57,7 +58,7 @@ export class Area extends EntidadeBase {
   agroPolygonId!: string | null;
 
   @Column({ type: 'jsonb', name: 'snapshot_detalhes', nullable: true })
-  snapshotDetalhes!: any | null;
+  snapshotDetalhes!: HistoricoAreaResponse | null;
 
   @ManyToOne(() => Usuario, (usuario) => usuario.areas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'usuario_id' })

@@ -48,7 +48,9 @@ export function isDentroDoBrasil(coords: Coordenada[]): boolean {
  * Validação Absoluta (Reverse Geocoding) usando o centróide do polígono
  * Garante que a área está DE FATO no Brasil, cobrindo contornos exatos.
  */
-export async function isExatamenteNoBrasil(coords: Coordenada[]): Promise<boolean> {
+export async function isExatamenteNoBrasil(
+  coords: Coordenada[],
+): Promise<boolean> {
   // Se já estiver fora do Bounding Box, recusa de imediato (otimização)
   if (!isDentroDoBrasil(coords)) {
     return false;
@@ -63,7 +65,7 @@ export async function isExatamenteNoBrasil(coords: Coordenada[]): Promise<boolea
 
     const res = await axios.get(
       `https://nominatim.openstreetmap.org/reverse?lat=${avgLat}&lon=${avgLon}&format=json`,
-      { headers: { 'User-Agent': 'CarbonEye-TCC-App/1.0' } }
+      { headers: { 'User-Agent': 'CarbonEye-TCC-App/1.0' } },
     );
 
     const countryCode = res.data?.address?.country_code;
@@ -71,7 +73,7 @@ export async function isExatamenteNoBrasil(coords: Coordenada[]): Promise<boolea
   } catch (error) {
     // Em caso de falha da API externa, assumimos o Bounding Box como fallback de segurança
     console.error('Falha ao validar país no Nominatim:', error);
-    return true; 
+    return true;
   }
 }
 

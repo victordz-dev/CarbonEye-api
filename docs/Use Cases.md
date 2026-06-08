@@ -10,13 +10,13 @@
 ## UC01 - Realizar Triagem Ambiental de Nova Área (Core)
 **Ator Principal:** Usuário  
 **Descrição:** O processo central onde o usuário desenha um polígono e o sistema cruza os dados para gerar o Laudo SIRI.  
-**Pré-condições:** O usuário deve estar autenticado e possuir saldo na sua cota mensal de consultas e hectares (máximo de 4 consultas e 40 hectares no mês).
+**Pré-condições:** O usuário deve estar autenticado e possuir saldo na sua cota global de hectares (máximo de 50 hectares na conta).
 
 **Fluxo Principal (Caminho Feliz):**
 1. O usuário acessa a aba de Mapa e inicia uma "Nova Análise".
 2. O usuário toca no mapa para desenhar os vértices do terreno (limite de até 50 pontos).
 3. O usuário fecha o polígono com um clique duplo no ponto de origem.
-4. O aplicativo valida internamente se o polígono possui tamanho igual ou inferior a 10 hectares (100.000m²) e se está dentro do Brasil.
+4. O aplicativo valida internamente se o polígono possui tamanho igual ou superior a 1 hectare (10.000m²), se não excede a cota global de 50ha e se está dentro do Brasil.
 5. O usuário confirma a análise e atribui um nome ao projeto.
 6. O aplicativo exibe uma tela de carregamento e envia as coordenadas ao Backend.
 7. O Backend (PostGIS) realiza a intersecção (`ST_Intersects`) e não encontra sobreposição com áreas protegidas.
@@ -25,12 +25,12 @@
 10. O aplicativo exibe o laudo completo com o status *"Potencialmente Classificável"*.
 
 **Fluxos de Exceção e Alternativos:**
-* *1a. Limite Dimensional Excedido:* No passo 4, se o polígono for maior que 10 hectares, o aplicativo bloqueia o envio e alerta o usuário para redesenhar.
+* *1a. Limite Dimensional Inválido:* No passo 4, se o polígono for menor que 1 hectare ou exceder a cota de 50ha, o aplicativo bloqueia o envio e alerta o usuário para redesenhar.
 * *2a. Área com Restrição Territorial (A Trava do PostGIS):* No passo 7, se o PostGIS detectar invasão (ex: Terra Indígena ou Unidade de Conservação):
     1. O Backend interrompe o processamento imediatamente (não aciona a API AgroMonitoring para poupar cota).
     2. Retorna ao aplicativo o status *"Área com Restrição Territorial Identificada"* e o nome da reserva atingida.
     3. O fluxo é encerrado na tela de resultados.
-* *3a. Cota Mensal Esgotada:* No passo 1, o sistema bloqueia a ação informando que as 4 consultas do mês ou o limite de 40 hectares já foram consumidos.
+* *3a. Cota Global Esgotada:* No passo 1, o sistema bloqueia a ação informando que o limite total de 50 hectares já foi consumido.
 
 ---
 

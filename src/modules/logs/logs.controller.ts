@@ -9,7 +9,13 @@ export class LogsController {
 
   @Post()
   async receberLogFront(
-    @Body() body: { acao: string; detalhes?: any; nivel?: NivelLog; usuarioId?: string },
+    @Body()
+    body: {
+      acao: string;
+      detalhes?: any;
+      nivel?: NivelLog;
+      usuarioId?: string;
+    },
     @Req() request: Request,
   ) {
     await this.logsService.registrarLog({

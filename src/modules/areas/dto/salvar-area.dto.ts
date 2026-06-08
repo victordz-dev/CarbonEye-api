@@ -17,7 +17,9 @@ export const SiriCompletoSchema = z.object({
 
 export const SalvarAreaSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
-  poligono: z.array(CoordenadaSchema).min(3, 'O polígono deve conter pelo menos 3 pontos.'),
+  poligono: z
+    .array(CoordenadaSchema)
+    .min(3, 'O polígono deve conter pelo menos 3 pontos.'),
   monitoramento_ativo: z.boolean(),
   siri_inicial: z.number(),
   agro_polygon_id: z.string().optional(),

@@ -53,19 +53,41 @@ describe('AuthService', () => {
 
   describe('register', () => {
     it('should throw ConflictException if email exists', async () => {
-      mockUsuarioRepository.findOne.mockResolvedValueOnce({ id: '1', email: 'test@test.com' });
-      await expect(service.register({ nome: 'Test', email: 'test@test.com', cpf: '12345678901', senha: 'password' }))
-        .rejects.toThrow(ConflictException);
+      mockUsuarioRepository.findOne.mockResolvedValueOnce({
+        id: '1',
+        email: 'test@test.com',
+      });
+      await expect(
+        service.register({
+          nome: 'Test',
+          email: 'test@test.com',
+          cpf: '12345678901',
+          senha: 'password',
+        }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should register a new user successfully', async () => {
       mockUsuarioRepository.findOne.mockResolvedValue(null);
-      mockUsuarioRepository.create.mockReturnValue({ id: '1', email: 'test@test.com' });
-      mockUsuarioRepository.save.mockResolvedValue({ id: '1', nome: 'Test', email: 'test@test.com', cpf: '12345678901' });
+      mockUsuarioRepository.create.mockReturnValue({
+        id: '1',
+        email: 'test@test.com',
+      });
+      mockUsuarioRepository.save.mockResolvedValue({
+        id: '1',
+        nome: 'Test',
+        email: 'test@test.com',
+        cpf: '12345678901',
+      });
 
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-pass');
-      
-      const result = await service.register({ nome: 'Test', email: 'test@test.com', cpf: '12345678901', senha: 'password' });
+
+      const result = await service.register({
+        nome: 'Test',
+        email: 'test@test.com',
+        cpf: '12345678901',
+        senha: 'password',
+      });
       expect(result.token).toBe('mock-token');
       expect(result.usuario.email).toBe('test@test.com');
       expect(mockLogsService.registrarLog).toHaveBeenCalled();
@@ -74,11 +96,19 @@ describe('AuthService', () => {
 
   describe('updateProfile', () => {
     it('should throw UnauthorizedException if wrong current password', async () => {
-      mockUsuarioRepository.findOne.mockResolvedValue({ id: '1', email: 'test@test.com', senha: 'hashed' });
+      mockUsuarioRepository.findOne.mockResolvedValue({
+        id: '1',
+        email: 'test@test.com',
+        senha: 'hashed',
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(service.updateProfile('1', { novaSenha: 'newpass', senhaAtual: 'wrong' }))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(
+        service.updateProfile('1', {
+          novaSenha: 'newpass',
+          senhaAtual: 'wrong',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });

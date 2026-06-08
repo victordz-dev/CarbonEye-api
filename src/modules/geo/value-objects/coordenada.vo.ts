@@ -10,10 +10,14 @@ export class CoordenadaVO {
 
   private validar(): void {
     if (this.latitude < -90 || this.latitude > 90) {
-      throw new BadRequestException('A latitude deve estar entre -90 e 90 graus.');
+      throw new BadRequestException(
+        'A latitude deve estar entre -90 e 90 graus.',
+      );
     }
     if (this.longitude < -180 || this.longitude > 180) {
-      throw new BadRequestException('A longitude deve estar entre -180 e 180 graus.');
+      throw new BadRequestException(
+        'A longitude deve estar entre -180 e 180 graus.',
+      );
     }
   }
 

@@ -151,7 +151,9 @@ export class TasksService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async sincronizarPoligonos(): Promise<void> {
-    this.logger.log('Iniciando Garbage Collector de polígonos (AgroMonitoring)...');
+    this.logger.log(
+      'Iniciando Garbage Collector de polígonos (AgroMonitoring)...',
+    );
 
     try {
       const dbAreas = await this.areaRepository.find({
@@ -173,16 +175,22 @@ export class TasksService {
         if (!dbPolygonIds.has(apiPoly.id)) {
           // Só exclui se foi criado há mais de 1 hora
           if (apiPoly.created_at < umaHoraAtras) {
-            this.logger.log(`Deletando polígono órfão: ${apiPoly.id} (Criado em ${apiPoly.created_at})`);
+            this.logger.log(
+              `Deletando polígono órfão: ${apiPoly.id} (Criado em ${apiPoly.created_at})`,
+            );
             await this.integrationsService.deletarPoligono(apiPoly.id);
             excluidos++;
           }
         }
       }
 
-      this.logger.log(`Garbage Collector finalizado. ${excluidos} polígonos órfãos excluídos.`);
+      this.logger.log(
+        `Garbage Collector finalizado. ${excluidos} polígonos órfãos excluídos.`,
+      );
     } catch (error) {
-      this.logger.error(`Erro ao executar sincronização de polígonos: ${(error as Error).message}`);
+      this.logger.error(
+        `Erro ao executar sincronização de polígonos: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -200,10 +208,13 @@ export class TasksService {
       try {
         const mesAnterior = new Date();
         mesAnterior.setMonth(mesAnterior.getMonth() - 1);
-        const mesStr = mesAnterior.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        const mesStr = mesAnterior.toLocaleString('pt-BR', {
+          month: 'long',
+          year: 'numeric',
+        });
 
         const mensagem = `Seu Relatório Mensal SIRI de ${mesStr} para a área "${area.nome}" está disponível para download.`;
-        
+
         const novoAlerta = this.alertaRepository.create({
           areaId: area.id,
           tipo: 'RELATORIO',
@@ -212,7 +223,9 @@ export class TasksService {
         });
         await this.alertaRepository.save(novoAlerta);
       } catch (error) {
-        this.logger.error(`Erro ao gerar alerta de relatório para a área ${area.nome}: ${(error as Error).message}`);
+        this.logger.error(
+          `Erro ao gerar alerta de relatório para a área ${area.nome}: ${(error as Error).message}`,
+        );
       }
     }
   }

@@ -11,13 +11,13 @@ A camada de serviços foi projetada para garantir escalabilidade, tipagem forte 
 * **Engenharia de Software (POO Avançada):** Implementação de Herança clássica utilizando uma `EntidadeBase` abstrata que propaga IDs e timestamps de criação (`criado_em`) genéricos para todas as tabelas (Usuario, Area, Alerta, HistoricoSiri, SistemaLog). Uso estrito de **Value Objects (VOs)** para isolar regras de negócio independentes, como a classe `CoordenadaVO` que valida latitudes e longitudes.
 * **Banco de Dados Relacional:** PostgreSQL.
 * **Motor Geoespacial:** Extensão PostGIS ativada no PostgreSQL, fundamental para os cálculos vetoriais.
-* **Mapeamento Objeto-Relacional (ORM):** TypeORM para gerenciar conexões, entidades e migrações.
+* **Mapeamento Objeto-Relacional (ORM):** TypeORM para gerenciar conexões, entidades e migrações seguras via CLI (sem sincronização em produção), com uso de *Transactions* (`DataSource`) para garantir rollback em caso de falhas e proteger a consistência do banco de dados relacional.
 
 ## 3. Estrutura Modular (Domain-Driven Design - DDD)
 O NestJS foi estruturado separando os domínios da aplicação, garantindo baixo acoplamento e alta coesão:
 
 * **`AuthModule`:** Gerencia o fluxo de autenticação e geração de JWT.
-* **`AreasModule`:** Responsável por receber o *Payload* do mobile e lidar com regras complexas, incluindo salvamento de "Snapshots" em JSONB quando o monitoramento de uma área é desativado (offline-history).
+* **`AreasModule`:** Responsável por receber o *Payload* do mobile e lidar com regras complexas, incluindo salvamento de "Snapshots" em JSONB quando o monitoramento de uma área é desativado (offline-history). Delega a geração de relatórios ao `LaudoPdfService`, garantindo o Princípio da Responsabilidade Única (SRP).
 * **`GeoModule`:** Módulo core. Contém os Value Objects (ex: `CoordenadaVO`) e a lógica de comunicação vetorial.
 * **`SiriModule`:** O motor de cálculo. Recebe os dados de vegetação e incêndios para aplicar os pesos matemáticos.
 * **`IntegrationsModule`:** Módulo isolado contendo integrações específicas de satélite.

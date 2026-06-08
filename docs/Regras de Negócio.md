@@ -3,11 +3,11 @@
 - **RN01 - Unicidade de Cadastro:**
   Não é permitida a existência de contas duplicadas. O E-mail e o CPF de cada usuário devem ser exclusivos no banco de dados.
 
-- **RN02 - Limites Mensais e de Monitoramento:**
-  A conta do usuário possui um teto restrito de uso. O usuário pode realizar no máximo 4 consultas por mês, com as áreas somando no máximo 40 hectares (ha) acumulados no período. Adicionalmente, o usuário pode manter até 2 mapas sob monitoramento contínuo simultaneamente, sendo que o monitoramento ativo destas duas áreas salvas não consome a cota mensal de consultas ou hectares do usuário.
+- **RN02 - Limites e Cotas de Monitoramento:**
+  A conta do usuário possui uma cota de área restrita. O usuário pode salvar áreas até atingir o teto global de 50 hectares (ha) na conta. Adicionalmente, o usuário pode manter até 2 mapas sob monitoramento contínuo simultaneamente.
 
-- **RN03 - Limite Dimensional de Triagem:**
-  O tamanho máximo permitido para o desenho de qualquer polígono de análise é de 100.000m² (ou 10 hectares) por consulta.
+- **RN03 - Limite Dimensional Mínimo:**
+  O tamanho mínimo permitido para o desenho de qualquer polígono de análise é de 1 hectare (10.000m²), a fim de garantir a compatibilidade com a resolução do satélite (AgroMonitoring). Não há limite máximo por triagem imposto, desde que não exceda a cota total de 50ha da conta.
 
 - **RN04 - Restrição de Fronteira:**
   O escopo do sistema atende exclusivamente ao território brasileiro. Qualquer tentativa de processar coordenadas localizadas fora dos limites do Brasil deve ser bloqueada.

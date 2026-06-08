@@ -8,6 +8,7 @@ import { Alerta } from '../../entities/alerta.entity';
 import { GeoModule } from '../geo/geo.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { SiriModule } from '../siri/siri.module';
+import { LaudoPdfService } from './laudo-pdf.service';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { SiriModule } from '../siri/siri.module';
     SiriModule,
   ],
   controllers: [AreasController],
-  providers: [AreasService],
+  providers: [AreasService, LaudoPdfService],
   exports: [AreasService],
 })
 export class AreasModule {}

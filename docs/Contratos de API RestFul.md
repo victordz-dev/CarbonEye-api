@@ -204,7 +204,13 @@ Retorna os dados cronológicos do índice NDVI histórico e a contagem de ocorr�
       { "data": "2025-12-01", "valor": 0.80 },
       { "data": "2026-01-01", "valor": 0.85 }
     ],
-    "ocorrencias_incendio": 1
+    "ocorrencias_incendio": 1,
+    "evi_atual": 0.81,
+    "ndwi_atual": 0.15,
+    "umidade_solo": 0.45,
+    "temp_solo": 298.15,
+    "imagem_satelite_truecolor": "https://agromonitoring.com/image/12345/truecolor",
+    "imagem_satelite_ndvi": "https://agromonitoring.com/image/12345/ndvi"
   }
   ```
 

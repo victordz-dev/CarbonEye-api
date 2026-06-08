@@ -6,8 +6,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 
-
-
 async function importQueimadasStream(
   filePath: string,
   focoRepo: Repository<FocoIncendio>,
@@ -15,11 +13,18 @@ async function importQueimadasStream(
 ) {
   const stats = fs.statSync(filePath);
   const estimatedLines = Math.floor(stats.size / 105); // estimativa de tamanho médio por linha no CSV
-  const step = limit > 0 && estimatedLines > limit ? Math.floor(estimatedLines / limit) : 1;
+  const step =
+    limit > 0 && estimatedLines > limit
+      ? Math.floor(estimatedLines / limit)
+      : 1;
 
-  console.log(`Tamanho do arquivo: ${(stats.size / (1024 * 1024)).toFixed(2)} MB`);
+  console.log(
+    `Tamanho do arquivo: ${(stats.size / (1024 * 1024)).toFixed(2)} MB`,
+  );
   console.log(`Estimativa de linhas totais: ${estimatedLines}`);
-  console.log(`Amostragem: Lendo 1 a cada ${step} registros para garantir amostragem uniforme ao longo do ano.`);
+  console.log(
+    `Amostragem: Lendo 1 a cada ${step} registros para garantir amostragem uniforme ao longo do ano.`,
+  );
 
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
@@ -50,7 +55,9 @@ async function importQueimadasStream(
         .split(',')
         .map((h) => h.trim());
       latIdx = headers.findIndex((h) => h === 'latitude' || h === 'lat');
-      lonIdx = headers.findIndex((h) => h === 'longitude' || h === 'lon' || h === 'lng');
+      lonIdx = headers.findIndex(
+        (h) => h === 'longitude' || h === 'lon' || h === 'lng',
+      );
       dateIdx = headers.findIndex(
         (h) =>
           h === 'datahora' ||
@@ -59,7 +66,9 @@ async function importQueimadasStream(
           h === 'date',
       );
       satIdx = headers.findIndex((h) => h === 'satelite' || h === 'satellite');
-      confIdx = headers.findIndex((h) => h === 'confianca' || h === 'confidence');
+      confIdx = headers.findIndex(
+        (h) => h === 'confianca' || h === 'confidence',
+      );
 
       if (latIdx === -1 || lonIdx === -1) {
         throw new Error(
@@ -89,8 +98,10 @@ async function importQueimadasStream(
       date = new Date(columns[dateIdx].replace(/\//g, '-'));
     }
 
-    const satelite = satIdx !== -1 && columns[satIdx] ? columns[satIdx] : 'VIIRS';
-    const confianca = confIdx !== -1 && columns[confIdx] ? parseInt(columns[confIdx], 10) : 80;
+    const satelite =
+      satIdx !== -1 && columns[satIdx] ? columns[satIdx] : 'VIIRS';
+    const confianca =
+      confIdx !== -1 && columns[confIdx] ? parseInt(columns[confIdx], 10) : 80;
 
     batch.push({
       data: date,
@@ -122,7 +133,9 @@ async function importQueimadasStream(
     console.log(`-> Progresso: ${count} focos de calor inseridos...`);
   }
 
-  console.log(`✅ Sucesso: ${count} focos de incêndio foram sincronizados no PostGIS.`);
+  console.log(
+    `✅ Sucesso: ${count} focos de incêndio foram sincronizados no PostGIS.`,
+  );
 }
 
 async function bootstrap() {

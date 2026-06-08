@@ -60,7 +60,7 @@ import { ScheduleModule } from '@nestjs/schedule';
             FocoIncendio,
             SistemaLog,
           ],
-          synchronize: true, // Apenas para fins acadêmicos / dev local
+          synchronize: !isProd, // Apenas para fins acadêmicos / dev local. Falso em prod para preservar tabelas QGIS do Supabase.
         };
       },
     }),
