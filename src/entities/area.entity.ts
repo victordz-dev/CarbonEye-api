@@ -11,12 +11,10 @@ import { Usuario } from './usuario.entity';
 import { HistoricoSiri } from './historicosiri.entity';
 import { Alerta } from './alerta.entity';
 import type { Polygon } from 'geojson';
+import { EntidadeBase } from './base.entity';
 
 @Entity('areas')
-export class Area {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
+export class Area extends EntidadeBase {
   @Column({ type: 'uuid', name: 'usuario_id' })
   usuarioId!: string;
 
@@ -58,8 +56,8 @@ export class Area {
   })
   agroPolygonId!: string | null;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'criado_em' })
-  criadoEm!: Date;
+  @Column({ type: 'jsonb', name: 'snapshot_detalhes', nullable: true })
+  snapshotDetalhes!: any | null;
 
   @ManyToOne(() => Usuario, (usuario) => usuario.areas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'usuario_id' })

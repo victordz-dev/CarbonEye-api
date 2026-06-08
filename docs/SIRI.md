@@ -37,17 +37,18 @@ A distribuição prioriza a vegetação atual e sua evolução histórica, pois 
 
 ## 4. Metodologia de Pontuação
 ### 4.1 Saúde Atual da Vegetação (45 pontos)
-Este componente utiliza o NDVI atual da área monitorada.
+Este componente utiliza o valor máximo entre o **NDVI** e o **EVI** (Índice de Vegetação Melhorado) da área monitorada, o que garante a melhor leitura possível para qualquer tipo de bioma.
 
-| NDVI ATUAL | PONTUAÇÃO |
-| ---------- | --------- |
-| Maior ou igual a 0.80 | 45 |
+| MAIOR ÍNDICE (NDVI ou EVI) | PONTUAÇÃO |
 | 0.70 - 0.79 | 40 |
 | 0.60 - 0.69 | 35 |
 | 0.50 - 0.59 | 25 |
 | 0.40 - 0.49 | 15 |
 | Menor que 0.40 | 0 |
-**justificativa:** Áreas com NDVI elevado apresentam maior densidade vegetal, maior vigor biológico e melhores condições ambientais.
+
+**Nota de Penalidade Hídrica (NDWI):** Caso o índice NDWI seja inferior a -0.1 (indicando estresse hídrico severo nas folhas), a pontuação desta categoria sofre uma penalidade direta de **-5 pontos**.
+
+**justificativa:** Áreas com valores elevados (seja no NDVI ou EVI) apresentam maior densidade vegetal, maior vigor biológico e melhores condições ambientais. O NDWI funciona como um balizador de estresse, permitindo reduzir a pontuação caso a vegetação esteja aparentemente verde, mas sofrendo de desidratação interna profunda.
 
 ### 4.2 Tendência Histórica da Vegetação (30 pontos)
 Este componente avalia a variação percentual do NDVI ao longo de um período oficial de 12 meses.
@@ -76,18 +77,17 @@ Este componente considera a quantidade de focos de incêndio detectados na área
 |Acima de 20 ocorrências  | 0  |
 **justificativa:** A recorrência de incêndios é um importante indicador de risco ambiental e instabilidade ecológica.
 
-### 4.4 Fatores Climáticos (5 pontos)
-Este componente considera condições climáticas atuais associadas ao risco ambiental, avaliadas por parâmetros objetivos da região.
+Este componente considera condições climáticas atuais associadas ao risco ambiental e a umidade física da superfície do solo.
 
 |SITUAÇÃO CLIMÁTICA|PONTUAÇÃO|CRITÉRIOS DE AVALIAÇÃO|
 |-----------------|--------|----------------------|
-|**Baixo Risco**|5|Umidade Relativa (UR) > 40% **E** Temperatura < 30°C **E** Vento < 15 km/h|
-|**Médio Risco**|3|UR entre 20% e 40% **OU** Temperatura entre 30°C e 35°C **OU** Vento entre 15 e 30 km/h|
-|**Alto Risco**|0|UR < 20% **OU** Temperatura > 35°C **OU** Vento > 30 km/h|
+|**Baixo Risco**|5|Umidade Relativa (UR) > 40% **E** Temp < 30°C **E** Vento < 15 km/h **E** Umidade do Solo >= 10% (0.1 m³/m³)|
+|**Médio Risco**|3|Condições intermediárias que não se enquadram em Baixo nem Alto Risco|
+|**Alto Risco**|0|UR < 20% **OU** Temperatura > 35°C **OU** Vento > 30 km/h **OU** Umidade do Solo < 5% (0.05 m³/m³)|
 
-A classificação considera a combinação de umidade relativa do ar, temperatura atual e velocidade dos ventos para determinar a propensão local a focos e propagação de incêndios.
+A classificação considera a combinação de umidade relativa do ar, temperatura atual, velocidade dos ventos e umidade do solo medida nos primeiros 10cm da raiz, determinando de forma robusta a propensão local à seca extrema e focos de incêndios.
 
-**justificativa:** Por representar uma condição momentânea, o clima possui menor influência na composição do índice.
+**justificativa:** A integração do clima atmosférico com as condições do solo permite prever com antecedência o estresse ambiental de uma área, mesmo que ela ainda se mantenha com uma cobertura verde momentânea.
 
 ---
 
@@ -98,7 +98,10 @@ $$
 SIRI = (\text{Saúde da Vegetação}) + (\text{Tendência Histórica}) + (\text{Histórico de Incêndios}) + (\text{Clima})
 $$
 
-O resultado será sempre um valor entre 0 e 100 pontos.
+O resultado final será sempre um valor consolidado entre 0 e 100 pontos. 
+
+**Representação Visual (Dashboard e PDF):**
+Para garantir transparência, a plataforma exibe o desmembramento de cada métrica sempre de forma fracionária, com seu respectivo teto máximo em vez de porcentagens (ex: Saúde Atual: `40/45`, Incêndios: `10/20`). Isso previne ilusões matemáticas onde o usuário acreditaria que tirou "100%" em um quesito de peso baixo.
 
 ---
 

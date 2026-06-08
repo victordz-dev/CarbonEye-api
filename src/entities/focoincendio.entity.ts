@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import type { Point } from 'geojson';
 
 @Entity('focos_incendio')
@@ -6,6 +6,7 @@ export class FocoIncendio {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Index({ spatial: true })
   @Column({
     type: 'geometry',
     spatialFeatureType: 'Point',

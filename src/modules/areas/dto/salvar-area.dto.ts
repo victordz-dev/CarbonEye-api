@@ -1,29 +1,29 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsArray,
-  ArrayMinSize,
-  ValidateNested,
-  IsBoolean,
-  IsNumber,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { CoordenadaDto } from './analisar-area.dto';
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
+import { CoordenadaSchema } from './analisar-area.dto';
 
-export class SalvarAreaDto {
-  @IsString()
-  @IsNotEmpty()
-  nome!: string;
+export const SiriDetalhesSchema = z.object({
+  vegetacao: z.number(),
+  historico: z.number(),
+  incendios: z.number(),
+  clima: z.number(),
+});
 
-  @IsArray()
-  @ArrayMinSize(3, { message: 'O polígono deve conter pelo menos 3 pontos.' })
-  @ValidateNested({ each: true })
-  @Type(() => CoordenadaDto)
-  poligono!: CoordenadaDto[];
+export const SiriCompletoSchema = z.object({
+  pontuacaoTotal: z.number(),
+  classificacao: z.string(),
+  detalhes: SiriDetalhesSchema,
+});
 
-  @IsBoolean()
-  monitoramento_ativo!: boolean;
+export const SalvarAreaSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  poligono: z.array(CoordenadaSchema).min(3, 'O polígono deve conter pelo menos 3 pontos.'),
+  monitoramento_ativo: z.boolean(),
+  siri_inicial: z.number(),
+  agro_polygon_id: z.string().optional(),
+  siri_completo: SiriCompletoSchema.optional(),
+});
 
-  @IsNumber()
-  siri_inicial!: number;
-}
+export class SiriDetalhesDto extends createZodDto(SiriDetalhesSchema) {}
+export class SiriCompletoDto extends createZodDto(SiriCompletoSchema) {}
+export class SalvarAreaDto extends createZodDto(SalvarAreaSchema) {}

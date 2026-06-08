@@ -7,12 +7,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Area } from './area.entity';
+import { EntidadeBase } from './base.entity';
 
 @Entity('historicos_siri')
-export class HistoricoSiri {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
+export class HistoricoSiri extends EntidadeBase {
   @Column({ type: 'uuid', name: 'area_id' })
   areaId!: string;
 
@@ -33,9 +31,6 @@ export class HistoricoSiri {
 
   @Column({ type: 'varchar', length: 255, name: 'classificacao_geral' })
   classificacaoGeral!: string;
-
-  @CreateDateColumn({ type: 'timestamp', name: 'data_calculo' })
-  dataCalculo!: Date;
 
   @ManyToOne(() => Area, (area) => area.historicosSiri, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'area_id' })

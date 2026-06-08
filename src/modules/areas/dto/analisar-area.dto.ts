@@ -1,26 +1,14 @@
-import {
-  IsNumber,
-  IsNotEmpty,
-  IsArray,
-  ArrayMinSize,
-  ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
 
-export class CoordenadaDto {
-  @IsNumber()
-  @IsNotEmpty()
-  latitude!: number;
+export const CoordenadaSchema = z.object({
+  latitude: z.number(),
+  longitude: z.number()
+});
 
-  @IsNumber()
-  @IsNotEmpty()
-  longitude!: number;
-}
+export const AnalisarAreaSchema = z.object({
+  poligono: z.array(CoordenadaSchema).min(3, 'O polígono deve conter pelo menos 3 pontos.')
+});
 
-export class AnalisarAreaDto {
-  @IsArray()
-  @ArrayMinSize(3, { message: 'O polígono deve conter pelo menos 3 pontos.' })
-  @ValidateNested({ each: true })
-  @Type(() => CoordenadaDto)
-  poligono!: CoordenadaDto[];
-}
+export class CoordenadaDto extends createZodDto(CoordenadaSchema) {}
+export class AnalisarAreaDto extends createZodDto(AnalisarAreaSchema) {}

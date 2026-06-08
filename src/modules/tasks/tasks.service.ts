@@ -53,7 +53,13 @@ export class TasksService {
           }),
         );
 
-        // 1. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
+        // 1. Calcula o SIRI com os dados atualizados
+        const siri = await this.siriService.calcularSiri(
+          coords,
+          area.agroPolygonId || '',
+        );
+
+        // 2. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
         const focosAtivos =
           await this.integrationsService.obterFocosAtivosRecentes(coords);
 
@@ -62,7 +68,7 @@ export class TasksService {
             `Detectados ${focosAtivos.length} focos ativos perto da área "${area.nome}".`,
           );
 
-          // 2. Salva os focos novos na base de dados espacial local
+          // Salva os focos novos na base de dados espacial local
           for (const foco of focosAtivos) {
             const ponto: Point = {
               type: 'Point',
@@ -84,13 +90,7 @@ export class TasksService {
             }
           }
 
-          // 3. Recalcula a pontuação do SIRI considerando os novos focos salvos no PostGIS
-          const siri = await this.siriService.calcularSiri(
-            coords,
-            area.agroPolygonId || '',
-          );
-
-          // 4. Cria e persiste a notificação/alerta para o usuário
+          // Cria alerta de incêndio
           const mensagem = `Atenção: Novo foco de calor ativo detectado nas proximidades do seu projeto "${area.nome}". O status foi rebaixado para ${siri.classificacao}.`;
           const novoAlerta = this.alertaRepository.create({
             areaId: area.id,
@@ -99,52 +99,120 @@ export class TasksService {
             lida: false,
           });
           await this.alertaRepository.save(novoAlerta);
-
-          // 5. Atualiza a entidade de Area com a nova nota
-          area.siriAtual = siri.pontuacaoTotal;
-          area.classificacaoAtual = siri.classificacao;
-          area.status =
-            siri.pontuacaoTotal < 40
-              ? 'EMERGENCIA'
-              : siri.pontuacaoTotal < 70
-                ? 'ALERTA'
-                : 'NORMAL';
-          area.ultimaAnalise = new Date();
-          await this.areaRepository.save(area);
-
-          // 6. Grava novo histórico SIRI no banco
-          const historico = this.historicoRepository.create({
-            areaId: area.id,
-            notaVegetacao: siri.detalhes.vegetacao,
-            notaHistoricoNdvi: siri.detalhes.historico,
-            notaIncendios: siri.detalhes.incendios,
-            notaClima: siri.detalhes.clima,
-            pontuacaoTotal: siri.pontuacaoTotal,
-            classificacaoGeral: siri.classificacao,
-          });
-          await this.historicoRepository.save(historico);
-        } else {
-          // Apenas atualiza clima/ndvi periódico se não houver incêndios ativos novos
-          const siri = await this.siriService.calcularSiri(
-            coords,
-            area.agroPolygonId || '',
-          );
-
-          area.siriAtual = siri.pontuacaoTotal;
-          area.classificacaoAtual = siri.classificacao;
-          area.status =
-            siri.pontuacaoTotal < 40
-              ? 'EMERGENCIA'
-              : siri.pontuacaoTotal < 70
-                ? 'ALERTA'
-                : 'NORMAL';
-          area.ultimaAnalise = new Date();
-          await this.areaRepository.save(area);
         }
+
+        // 3. Checa por clima extremo
+        const temp = siri.climaAtual.temp;
+        const hum = siri.climaAtual.umidade;
+        if (temp > 35 || hum < 20) {
+          const alertaClima = this.alertaRepository.create({
+            areaId: area.id,
+            tipo: 'CLIMA',
+            mensagem: `Alerta Climático: Condições extremas registradas na área "${area.nome}". Temperatura: ${temp}°C, Umidade: ${hum}%.`,
+            lida: false,
+          });
+          await this.alertaRepository.save(alertaClima);
+        }
+
+        // 4. Atualiza a entidade de Area com a nova nota
+        area.siriAtual = siri.pontuacaoTotal;
+        area.classificacaoAtual = siri.classificacao;
+        area.status =
+          siri.pontuacaoTotal < 40
+            ? 'EMERGENCIA'
+            : siri.pontuacaoTotal < 70
+              ? 'ALERTA'
+              : 'NORMAL';
+        area.ultimaAnalise = new Date();
+        await this.areaRepository.save(area);
+
+        // 5. Grava SEMPRE o novo histórico SIRI no banco para a série temporal
+        const historico = this.historicoRepository.create({
+          areaId: area.id,
+          notaVegetacao: siri.detalhes.vegetacao,
+          notaHistoricoNdvi: siri.detalhes.historico,
+          notaIncendios: siri.detalhes.incendios,
+          notaClima: siri.detalhes.clima,
+          pontuacaoTotal: siri.pontuacaoTotal,
+          classificacaoGeral: siri.classificacao,
+        });
+        await this.historicoRepository.save(historico);
       } catch (error) {
         this.logger.error(
           `Erro ao processar varredura da área ${area.nome}: ${(error as Error).message}`,
         );
+      }
+    }
+  }
+
+  /**
+   * Coletor de lixo: Executa de hora em hora para encontrar e excluir polígonos
+   * criados na API do AgroMonitoring que ficaram órfãos (não foram salvos no DB)
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async sincronizarPoligonos(): Promise<void> {
+    this.logger.log('Iniciando Garbage Collector de polígonos (AgroMonitoring)...');
+
+    try {
+      const dbAreas = await this.areaRepository.find({
+        select: ['agroPolygonId'],
+      });
+      const dbPolygonIds = new Set(
+        dbAreas.map((a) => a.agroPolygonId).filter((id) => id),
+      );
+
+      const apiPolygons = await this.integrationsService.obterTodosPoligonos();
+
+      const agoraUnix = Math.floor(Date.now() / 1000);
+      const umaHoraAtras = agoraUnix - 3600;
+
+      let excluidos = 0;
+
+      for (const apiPoly of apiPolygons) {
+        // Se o polígono não existe no nosso banco de dados
+        if (!dbPolygonIds.has(apiPoly.id)) {
+          // Só exclui se foi criado há mais de 1 hora
+          if (apiPoly.created_at < umaHoraAtras) {
+            this.logger.log(`Deletando polígono órfão: ${apiPoly.id} (Criado em ${apiPoly.created_at})`);
+            await this.integrationsService.deletarPoligono(apiPoly.id);
+            excluidos++;
+          }
+        }
+      }
+
+      this.logger.log(`Garbage Collector finalizado. ${excluidos} polígonos órfãos excluídos.`);
+    } catch (error) {
+      this.logger.error(`Erro ao executar sincronização de polígonos: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Gera relatório mensal para todas as áreas ativas.
+   */
+  @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT)
+  async gerarRelatoriosMensais(): Promise<void> {
+    this.logger.log('Iniciando geração de relatórios mensais...');
+    const areasMonitoradas = await this.areaRepository.find({
+      where: { monitoramentoAtivo: true },
+    });
+
+    for (const area of areasMonitoradas) {
+      try {
+        const mesAnterior = new Date();
+        mesAnterior.setMonth(mesAnterior.getMonth() - 1);
+        const mesStr = mesAnterior.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+        const mensagem = `Seu Relatório Mensal SIRI de ${mesStr} para a área "${area.nome}" está disponível para download.`;
+        
+        const novoAlerta = this.alertaRepository.create({
+          areaId: area.id,
+          tipo: 'RELATORIO',
+          mensagem,
+          lida: false,
+        });
+        await this.alertaRepository.save(novoAlerta);
+      } catch (error) {
+        this.logger.error(`Erro ao gerar alerta de relatório para a área ${area.nome}: ${(error as Error).message}`);
       }
     }
   }

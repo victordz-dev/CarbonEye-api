@@ -13,7 +13,7 @@
   O escopo do sistema atende exclusivamente ao território brasileiro. Qualquer tentativa de processar coordenadas localizadas fora dos limites do Brasil deve ser bloqueada.
 
 - **RN05 - Hierarquia de Validação Territorial (Economia de Cota):**
-  A verificação de sobreposição espacial é obrigatória e deve ser feita antes de qualquer coisa. Se a área desenhada invadir uma Terra Indígena (TI) ou Unidade de Conservação (UC), a área recebe automaticamente o laudo "Área com Restrição Territorial Identificada". Neste cenário, o sistema está proibido de acionar qualquer API externa.
+  A verificação de sobreposição espacial é obrigatória e deve ser feita antes de qualquer coisa. Se a área desenhada invadir uma Terra Indígena (TI) ou Unidade de Conservação (UC), a área recebe automaticamente o laudo "Área com Restrição Territorial Identificada". Neste cenário, o sistema está proibido de acionar qualquer API externa (AgroMonitoring).
 
 - **RN06 - Condição de Classificação Positiva:**
   Para que o laudo final de uma área receba o status de "Potencialmente Classificável", ela deve cumprir dois critérios obrigatórios e simultâneos: ser livre de restrições territoriais e obter uma pontuação ambiental superior a 70 pontos no índice SIRI.
@@ -28,8 +28,11 @@
 - **RN08 - Irreversibilidade do Consumo de Cota:**
   O consumo de área trafegado para a API AgroMonitoring é definitivo. A exclusão de uma área do histórico do usuário não estorna a área (em hectares) consumida do limite mensal.
 
-- **RN09 - Exclusão Autenticada (Soft Delete):**
-  A exclusão do mapa do histórico do usuário é o único meio de remoção do sistema. Essa ação não deleta o registro físico do banco de dados (visando manter o histórico para fins de auditoria), mas o inativa para a visualização do usuário.
+- **RN09 - Exibição Segmentada (Monitoramento x Histórico):**
+  A interface principal (Home) apenas exibe as áreas cujo `monitoramento_ativo` é verdadeiro. Áreas não monitoradas caem estritamente para a aba de Histórico, com gráficos renderizados a partir do último estado conhecido salvo no banco de dados (Snapshot).
 
-- **RN10 - Retomada de Monitoramento:**
-  Se o usuário pausar o monitoramento de uma área e posteriormente reativá-lo, o registro de atualizações contínuas de métricas deverá ser reiniciado a partir do momento da nova ativação, não preenchendo as lacunas temporais do período em que esteve pausado.
+- **RN10 - Via de Mão Única no Monitoramento:**
+  O ato de cessar o monitoramento de uma área é definitivo (via de mão única). Uma vez marcado como "Não Monitorar", a API do AgroMonitoring não é mais consumida e o polígono é salvo de forma imutável via JSONB (Snapshot) na tabela de Áreas para visualização vitalícia offline, não sendo possível retomar a assinatura contínua daquela exata área posteriormente.
+
+- **RN11 - Homologação de Alertas Climáticos (Mocks):**
+  Dado que desastres ambientais são imprevisíveis, o sistema provê nativamente um ambiente simulado ("Área de Testes" em Configurações) onde o usuário pode disparar intencionalmente Alertas Falsos de Queimadas ou Eventos Climáticos para comprovar a recepção de push-notifications ou atualizações do feed em tempo real.

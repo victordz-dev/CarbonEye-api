@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, Index } from 'typeorm';
 import { Polygon, MultiPolygon } from 'geojson';
 
 @Entity('territorios_protegidos')
@@ -12,6 +12,7 @@ export class TerritorioProtegido {
   @Column({ type: 'varchar', length: 50 })
   tipo!: string;
 
+  @Index({ spatial: true })
   @Column({
     type: 'geometry',
     name: 'geom',

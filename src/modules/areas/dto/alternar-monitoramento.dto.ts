@@ -1,6 +1,8 @@
-import { IsBoolean } from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
 
-export class AlternarMonitoramentoDto {
-  @IsBoolean()
-  monitoramento_ativo!: boolean;
-}
+export const AlternarMonitoramentoSchema = z.object({
+  monitoramento_ativo: z.boolean()
+});
+
+export class AlternarMonitoramentoDto extends createZodDto(AlternarMonitoramentoSchema) {}

@@ -1,15 +1,19 @@
+```mermaid
 erDiagram
-    USUARIOS {
+    ENTIDADE_BASE {
         UUID id PK
+        TIMESTAMP criado_em
+    }
+
+    USUARIOS {
         VARCHAR nome
         VARCHAR cpf UK
         VARCHAR email UK
         VARCHAR senha
-        TIMESTAMP criado_em
+        TIMESTAMP excluido_em
     }
     
     AREAS {
-        UUID id PK
         UUID usuario_id FK
         VARCHAR nome
         GEOMETRY geometria
@@ -18,11 +22,11 @@ erDiagram
         VARCHAR classificacao_atual
         TIMESTAMP ultima_analise
         BOOLEAN monitoramento_ativo
-        TIMESTAMP criado_em
+        VARCHAR agro_polygon_id
+        JSONB snapshot_detalhes
     }
     
     HISTORICOS_SIRI {
-        UUID id PK
         UUID area_id FK
         INT nota_vegetacao
         INT nota_historico_ndvi
@@ -30,18 +34,23 @@ erDiagram
         INT nota_clima
         INT pontuacao_total
         VARCHAR classificacao_geral
-        TIMESTAMP data_calculo
     }
     
     ALERTAS {
-        UUID id PK
         UUID area_id FK
         VARCHAR tipo
         TEXT mensagem
         BOOLEAN lida
-        TIMESTAMP data_evento
     }
     
+    SISTEMA_LOGS {
+        UUID usuario_id FK
+        ENUM nivel
+        ENUM origem
+        VARCHAR acao
+        JSONB detalhes
+    }
+
     TERRITORIOS_PROTEGIDOS {
         INT gid PK
         VARCHAR nome_reserva
@@ -49,6 +58,13 @@ erDiagram
         GEOMETRY geom
     }
 
+    ENTIDADE_BASE ||--o{ USUARIOS : "herda (POO)"
+    ENTIDADE_BASE ||--o{ AREAS : "herda (POO)"
+    ENTIDADE_BASE ||--o{ HISTORICOS_SIRI : "herda (POO)"
+    ENTIDADE_BASE ||--o{ ALERTAS : "herda (POO)"
+    ENTIDADE_BASE ||--o{ SISTEMA_LOGS : "herda (POO)"
+
     USUARIOS ||--o{ AREAS : "possui (1:N)"
     AREAS ||--o{ HISTORICOS_SIRI : "registra (1:N)"
     AREAS ||--o{ ALERTAS : "dispara (1:N)"
+```

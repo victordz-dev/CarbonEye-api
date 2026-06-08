@@ -1,30 +1,12 @@
-import {
-  IsString,
-  IsEmail,
-  IsNotEmpty,
-  Length,
-  Matches,
-} from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
+import { cpf } from 'cpf-cnpj-validator';
 
-export class RegisterDto {
-  @IsString()
-  @IsNotEmpty()
-  nome!: string;
+const RegisterSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  cpf: z.string().refine((val) => cpf.isValid(val), { message: 'CPF inválido.' }),
+  email: z.string().email('O e-mail deve ser válido.'),
+  senha: z.string().min(6, 'A senha deve conter no mínimo 6 caracteres.').max(20, 'A senha deve conter no máximo 20 caracteres.'),
+});
 
-  @IsString()
-  @IsNotEmpty()
-  @Length(11, 11)
-  @Matches(/^\d{11}$/, {
-    message: 'CPF deve conter exatamente 11 dígitos numéricos.',
-  })
-  cpf!: string;
-
-  @IsEmail()
-  @IsNotEmpty()
-  email!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @Length(6, 20, { message: 'A senha deve conter entre 6 e 20 caracteres.' })
-  senha!: string;
-}
+export class RegisterDto extends createZodDto(RegisterSchema) {}

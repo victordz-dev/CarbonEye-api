@@ -159,10 +159,10 @@ async function bootstrap() {
 
   if (csvPath && fs.existsSync(csvPath)) {
     console.log('🚀 Iniciando importação via Stream do arquivo CSV...');
-    // Se for o CSV grande do BDQueimadas, limitamos a 100k por segurança da cota do Supabase.
-    // Se preferir carregar tudo e seu banco local suportar, altere o limite para 0.
+    // Se for o CSV grande do BDQueimadas, limitamos a 1M para popular o Supabase inteiro.
+    // O algoritmo fará amostragem pegando focos ao longo do ano todo.
     const isBigFile = path.basename(csvPath).startsWith('bdqueimadas');
-    const importLimit = isBigFile ? 100000 : 0;
+    const importLimit = isBigFile ? 1000000 : 0;
     await importQueimadasStream(csvPath, focoRepo, importLimit);
   } else if (fs.existsSync(jsonPath)) {
     console.log('🚀 Detectado arquivo JSON fallback. Importando focos...');

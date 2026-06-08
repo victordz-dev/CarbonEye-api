@@ -139,14 +139,18 @@ Essas áreas demandam maior atenção e acompanhamento devido à presença de co
 
 Nesses casos, o sistema bloqueia imediatamente o acionamento de APIs externas (economizando cotas de processamento) e a área recebe essa classificação automaticamente, sem a necessidade de cálculo do índice SIRI.
 
-# 9. Monitoramento Contínuo
-Após a conclusão da análise inicial, o usuário pode salvar a área para acompanhamento contínuo.
+# 9. Monitoramento Contínuo e Testabilidade
+Após a conclusão da análise inicial, o usuário pode salvar a área para acompanhamento contínuo no Dashboard principal.
 
-As áreas monitoradas passam por atualizações periódicas dos indicadores ambientais, permitindo acompanhar alterações nas condições observadas ao longo do tempo.
+As áreas monitoradas passam por atualizações periódicas dos indicadores ambientais, permitindo acompanhar alterações nas condições observadas ao longo do tempo através da API NASA FIRMS e modelos climáticos.
 
-Sempre que forem identificados eventos potencialmente relevantes, como focos de incêndio próximos à área monitorada, degradação da vegetação ou condições climáticas adversas, o sistema poderá gerar alertas para o usuário.
+Sempre que forem identificados eventos potencialmente relevantes, como focos de incêndio próximos à área monitorada, degradação da vegetação ou condições climáticas adversas, o sistema gera notificações para o usuário.
 
-Essa funcionalidade transforma o CarbonEye não apenas em uma ferramenta de análise, mas também em uma plataforma de acompanhamento ambiental contínuo.
+**Via de Mão Única e Offline-First:**
+Caso o usuário decida cessar o monitoramento, a área é removida da Home e migrada estritamente para a tela de Histórico. Trata-se de uma via de mão única: a área ganha um "snapshot" (registro fotográfico imutável dos últimos dados captados) no banco e encerra o consumo de APIs na nuvem, servindo apenas para consultas vitálicias em modo offline.
+
+**Modo de Simulação (Mock):**
+Para fins de auditoria, demonstração acadêmica e validação de engenharia (Global Solution), o CarbonEye permite injeção manual de Alertas Simulados através de uma Área de Testes escondida. O avaliador pode forçar a injeção de incêndios ou crises climáticas para visualizar como a interface e as notificações reagem sem precisar aguardar um desastre real.
 
 # 10. Como o Sistema Funciona
 O CarbonEye permite que o usuário realize análises ambientais preliminares de forma simples e rápida. O fluxo básico de uso é o seguinte:

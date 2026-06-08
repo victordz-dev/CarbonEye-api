@@ -12,6 +12,10 @@ export interface SiriScoreResult {
     historico: number;
     incendios: number;
     clima: number;
+    evi_atual?: number;
+    ndwi_atual?: number;
+    umidade_solo?: number;
+    temp_solo?: number;
   };
   climaAtual: WeatherData;
   classificacao: string;
@@ -45,24 +49,38 @@ export class SiriService {
       this.logger.log(`Iniciando cálculo do SIRI para o polígono ${polyId}...`);
 
       // 1. Saúde da Vegetação Atual (max 45 pontos)
-      const ndviHistory =
-        await this.integrationsService.obterHistoricoNdvi(polyId);
+      const ndviData = await this.integrationsService.obterHistoricoNdvi(polyId);
+      
+      // Filtra outliers (valores < 0.1) e extrai apenas os números para o cálculo SIRI
+      const ndviHistory = ndviData
+        .map((item) => item.valor)
+        .filter((valor) => valor >= 0.1);
+
       const ndviAtual =
         ndviHistory.length > 0 ? ndviHistory[ndviHistory.length - 1] : 0.75;
 
+      const indicesExtra = await this.integrationsService.obterIndicesRecentes(polyId);
+
       let notaVegetacao = 0;
-      if (ndviAtual >= 0.8) {
+      // Melhora a nota da vegetação combinando NDVI e EVI se o EVI for forte
+      const saudeMax = Math.max(ndviAtual, indicesExtra.evi);
+      if (saudeMax >= 0.8) {
         notaVegetacao = 45;
-      } else if (ndviAtual >= 0.7) {
+      } else if (saudeMax >= 0.7) {
         notaVegetacao = 40;
-      } else if (ndviAtual >= 0.6) {
+      } else if (saudeMax >= 0.6) {
         notaVegetacao = 35;
-      } else if (ndviAtual >= 0.5) {
+      } else if (saudeMax >= 0.5) {
         notaVegetacao = 25;
-      } else if (ndviAtual >= 0.4) {
+      } else if (saudeMax >= 0.4) {
         notaVegetacao = 15;
       } else {
         notaVegetacao = 0;
+      }
+
+      // Se NDWI (Água na folha) for muito baixo, penaliza a nota de vegetação (-5 pts)
+      if (indicesExtra.ndwi < -0.1) {
+        notaVegetacao = Math.max(0, notaVegetacao - 5);
       }
 
       // 2. Tendência Histórica da Vegetação (max 30 pontos)
@@ -119,14 +137,24 @@ export class SiriService {
       );
 
       let notaClima = 3; // Risco Médio padrão
-      if (clima.umidade > 40 && clima.temp < 30 && clima.vento < 15) {
+      const dadosSolo = await this.integrationsService.obterDadosSolo(polyId);
+
+      // Usando Umidade do Solo (moisture m3/m3) para ajudar na nota
+      // Se umidade do solo > 0.15 e temp < 30, é ótimo.
+      // Se umidade do solo < 0.05 ou temp > 35, muito ruim.
+      if (clima.umidade > 40 && clima.temp < 30 && clima.vento < 15 && dadosSolo.umidade >= 0.1) {
         notaClima = 5; // Baixo Risco
-      } else if (clima.umidade < 20 || clima.temp > 35 || clima.vento > 30) {
+      } else if (clima.umidade < 20 || clima.temp > 35 || clima.vento > 30 || dadosSolo.umidade < 0.05) {
         notaClima = 0; // Alto Risco
       }
 
-      const pontuacaoTotal =
+      let pontuacaoTotal =
         notaVegetacao + notaHistorico + notaIncendios + notaClima;
+
+      // Penalidade para áreas severamente degradadas ou urbanizadas
+      if (ndviAtual < 0.25) {
+        pontuacaoTotal = Math.min(pontuacaoTotal, 35);
+      }
 
       let classificacao =
         'Área com Baixo Risco Ambiental (Potencialmente Classificável)';
@@ -143,6 +171,10 @@ export class SiriService {
           historico: notaHistorico,
           incendios: notaIncendios,
           clima: notaClima,
+          evi_atual: indicesExtra.evi,
+          ndwi_atual: indicesExtra.ndwi,
+          umidade_solo: dadosSolo.umidade,
+          temp_solo: dadosSolo.tempSuperficie,
         },
         climaAtual: clima,
         classificacao,

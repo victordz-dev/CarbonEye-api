@@ -34,20 +34,20 @@
 
 ---
 
-## UC02 - Ativar Monitoramento Contínuo
+## UC02 - Parar o Monitoramento Contínuo (Via de Mão Única)
 **Ator Principal:** Usuário  
-**Descrição:** O usuário escolhe uma área que já passou pela triagem inicial e a coloca em observação ativa.  
-**Pré-condições:** A área não deve possuir restrições territoriais. O usuário não pode ter atingido o limite de 2 mapas monitorados simultaneamente.
+**Descrição:** O usuário escolhe uma área que está sendo monitorada e decide arquivá-hor, cessando o processamento em nuvem.  
+**Pré-condições:** A área deve possuir `monitoramento_ativo = true`.
 
 **Fluxo Principal:**
-1. O usuário acessa o Laudo de uma área recém-pesquisada ou entra na aba "Histórico".
-2. O usuário clica no botão "Ativar Monitoramento".
+1. O usuário acessa o Laudo da área na Home ou no Mapa.
+2. O usuário clica no botão para "Desativar Monitoramento".
 3. O sistema operacional mobile solicita permissão para enviar Notificações Push (apenas na primeira vez).
-4. O Backend atualiza o status do banco de dados (`monitoramento_ativo = true`).
-5. A área passa a ser exibida como um *Card* ativo na Tela Inicial (Dashboard), exibindo seu status de risco atual (NORMAL, ALERTA ou EMERGÊNCIA).
+3. O Backend atualiza o status do banco de dados (`monitoramento_ativo = false`), desativa futuras chamadas da API AgroMonitoring para essa geometria e salva um Snapshot estático do laudo atual em JSONB.
+4. A área deixa de aparecer no Dashboard principal (Home) e migra de forma vitalícia e irreversível para a aba "Histórico".
 
 **Fluxos de Exceção e Alternativos:**
-* *1a. Limite de Monitoramento Atingido:* Se o usuário já tiver 2 áreas ativas, o botão exibe um bloqueio visual e um aviso informando que ele deve pausar o monitoramento de outra área antes de prosseguir.
+* *1a. Via de Mão Única:* Se o usuário tentar reativar o monitoramento de uma área do histórico, o botão não estará disponível, exigindo que ele cadastre um novo polígono consumindo nova cota se desejar monitorar novamente.
 
 ---
 
@@ -75,7 +75,7 @@
 
 **Fluxo Principal:**
 1. O usuário acessa a aba "Histórico".
-2. O aplicativo carrega a lista de áreas (buscando no `AsyncStorage` local e sincronizando com a API).
+2. O aplicativo lista as áreas inativas (utilizando `TanStack Query` e consumindo o banco de dados via BFF NestJS).
 3. O usuário seleciona um mapa e entra na "Tela de Detalhes".
 4. O aplicativo renderiza o gráfico em linha do Índice NDVI e o histórico de incêndios.
 5. O usuário clica em "Exportar para PDF".

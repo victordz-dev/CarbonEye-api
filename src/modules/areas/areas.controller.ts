@@ -99,4 +99,23 @@ export class AreasController {
   ): Promise<{ mensagem: string }> {
     return this.areasService.excluirArea(usuarioId, areaId);
   }
+
+  @Patch(':id/nome')
+  @HttpCode(HttpStatus.OK)
+  async renomearArea(
+    @GetUser('id') usuarioId: string,
+    @Param('id') areaId: string,
+    @Body('nome') novoNome: string,
+  ): Promise<{ mensagem: string }> {
+    return this.areasService.renomearArea(usuarioId, areaId, novoNome);
+  }
+
+  @Post(':id/alertas/mock')
+  @HttpCode(HttpStatus.CREATED)
+  async criarAlertaMock(
+    @GetUser('id') usuarioId: string,
+    @Param('id') areaId: string,
+  ): Promise<{ mensagem: string }> {
+    return this.areasService.criarAlertaMock(usuarioId, areaId);
+  }
 }

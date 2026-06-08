@@ -7,12 +7,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Area } from './area.entity';
+import { EntidadeBase } from './base.entity';
 
 @Entity('alertas')
-export class Alerta {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
+export class Alerta extends EntidadeBase {
   @Column({ type: 'uuid', name: 'area_id' })
   areaId!: string;
 
@@ -24,9 +22,6 @@ export class Alerta {
 
   @Column({ type: 'boolean', default: false })
   lida!: boolean;
-
-  @CreateDateColumn({ type: 'timestamp', name: 'data_evento' })
-  dataEvento!: Date;
 
   @ManyToOne(() => Area, (area) => area.alertas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'area_id' })

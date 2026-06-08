@@ -3,15 +3,14 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   OneToMany,
 } from 'typeorm';
 import { Area } from './area.entity';
+import { EntidadeBase } from './base.entity';
 
 @Entity('usuarios')
-export class Usuario {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
+export class Usuario extends EntidadeBase {
   @Column({ type: 'varchar', length: 255 })
   nome!: string;
 
@@ -24,8 +23,8 @@ export class Usuario {
   @Column({ type: 'varchar', length: 255 })
   senha!: string;
 
-  @CreateDateColumn({ type: 'timestamp', name: 'criado_em' })
-  criadoEm!: Date;
+  @DeleteDateColumn({ type: 'timestamp', name: 'excluido_em', nullable: true })
+  excluidoEm?: Date;
 
   @OneToMany(() => Area, (area) => area.usuario)
   areas!: Area[];
