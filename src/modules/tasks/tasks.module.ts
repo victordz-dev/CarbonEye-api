@@ -8,6 +8,7 @@ import { HistoricoSiri } from '../../entities/historicosiri.entity';
 import { GeoModule } from '../geo/geo.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { SiriModule } from '../siri/siri.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { SiriModule } from '../siri/siri.module';
     GeoModule,
     IntegrationsModule,
     SiriModule,
+    NotificationsModule,
   ],
   providers: [TasksService],
 })

@@ -13,12 +13,15 @@ import {
   GeoService,
   Coordenada,
   coordenadasParaWktPolygon,
-  isDentroDoBrasil,
-  isExatamenteNoBrasil,
 } from '../geo/geo.service';
 import { SiriService } from '../siri/siri.service';
-import { IntegrationsService } from '../integrations/integrations.service';
+import {
+  IntegrationsService,
+  isDentroDoBrasil,
+  isExatamenteNoBrasil,
+} from '../integrations/integrations.service';
 import { LogsService } from '../logs/logs.service';
+import { SnapshotService } from './snapshot.service';
 import { NivelLog, OrigemLog } from '../../entities/sistemalog.entity';
 import { SalvarAreaDto } from './dto/salvar-area.dto';
 import { AlternarMonitoramentoDto } from './dto/alternar-monitoramento.dto';
@@ -50,6 +53,7 @@ export class AreasService {
     private readonly siriService: SiriService,
     private readonly integrationsService: IntegrationsService,
     private readonly logsService: LogsService,
+    private readonly snapshotService: SnapshotService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -95,9 +99,9 @@ export class AreasService {
         );
       }
 
-      // Check total global user quota
+      // Check total global user quota (only for active monitoring)
       const totalAreaResult = await this.areaRepository.query(
-        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1',
+        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1 AND monitoramento_ativo = true',
         [usuarioId],
       );
       const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
@@ -199,7 +203,7 @@ export class AreasService {
       }
 
       const totalAreaResult = await this.areaRepository.query(
-        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1',
+        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1 AND monitoramento_ativo = true',
         [usuarioId],
       );
       const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
@@ -235,8 +239,14 @@ export class AreasService {
         c.longitude,
         c.latitude,
       ]);
-      if (formattedCoords[0] !== formattedCoords[formattedCoords.length - 1]) {
-        formattedCoords.push(formattedCoords[0]);
+      const primeiroPonto = formattedCoords[0];
+      const ultimoPonto = formattedCoords[formattedCoords.length - 1];
+
+      if (
+        primeiroPonto[0] !== ultimoPonto[0] ||
+        primeiroPonto[1] !== ultimoPonto[1]
+      ) {
+        formattedCoords.push(primeiroPonto);
       }
       const geometria: Polygon = {
         type: 'Polygon',
@@ -278,7 +288,7 @@ export class AreasService {
 
       if (areaSalva && !dto.monitoramento_ativo && polyId) {
         try {
-          const snapshot = await this.gerarSnapshot(polyId, dto.poligono);
+          const snapshot = await this.snapshotService.gerarSnapshot(polyId, dto.poligono);
           areaSalva.snapshotDetalhes = snapshot;
           await this.areaRepository.save(areaSalva);
           await this.integrationsService.deletarPoligono(polyId);
@@ -359,66 +369,10 @@ export class AreasService {
       return area.snapshotDetalhes;
     }
 
-    return this.gerarSnapshot(area.agroPolygonId || '', coords);
+    return this.snapshotService.gerarSnapshot(area.agroPolygonId || '', coords);
   }
 
-  private async gerarSnapshot(
-    agroPolygonId: string,
-    coords: Coordenada[],
-  ): Promise<HistoricoAreaResponse> {
-    if (!agroPolygonId) {
-      return {
-        linha_do_tempo_ndvi: [],
-        ocorrencias_incendio: 0,
-        imagem_satelite_truecolor: 'https://picsum.photos/id/10/400/300',
-        imagem_satelite_ndvi: 'https://picsum.photos/id/10/400/300',
-      };
-    }
 
-    const rawNdviValores =
-      await this.integrationsService.obterHistoricoNdvi(agroPolygonId);
-    const indicesExtra =
-      await this.integrationsService.obterIndicesRecentes(agroPolygonId);
-    const dadosSolo =
-      await this.integrationsService.obterDadosSolo(agroPolygonId);
-    const quantidadeFocos = await this.geoService.obterQuantidadeFocosNoEntorno(
-      coords,
-      RAIO_FOCOS_HORAS,
-    );
-
-    const ndviMensalMap = new Map<string, { soma: number; qtd: number }>();
-
-    rawNdviValores.forEach((item) => {
-      if (item.valor >= 0.1) {
-        const d = new Date(item.dataUnix * 1000);
-        const mesAno = d.toISOString().substring(0, 7) + '-01';
-
-        const atual = ndviMensalMap.get(mesAno) || { soma: 0, qtd: 0 };
-        ndviMensalMap.set(mesAno, {
-          soma: atual.soma + item.valor,
-          qtd: atual.qtd + 1,
-        });
-      }
-    });
-
-    const ndviTimeline = Array.from(ndviMensalMap.entries())
-      .map(([data, stats]) => ({
-        data,
-        valor: parseFloat((stats.soma / stats.qtd).toFixed(2)),
-      }))
-      .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
-
-    return {
-      linha_do_tempo_ndvi: ndviTimeline,
-      ocorrencias_incendio: quantidadeFocos,
-      evi_atual: indicesExtra.evi,
-      ndwi_atual: indicesExtra.ndwi,
-      umidade_solo: dadosSolo.umidade,
-      temp_solo: dadosSolo.tempSuperficie,
-      imagem_satelite_truecolor: 'https://picsum.photos/id/10/400/300',
-      imagem_satelite_ndvi: 'https://picsum.photos/id/10/400/300',
-    };
-  }
 
   /**
    * Ativa ou pausa o monitoramento contínuo de uma área
@@ -463,7 +417,7 @@ export class AreasService {
 
       // Gera o snapshot
       try {
-        const snapshot = await this.gerarSnapshot(
+        const snapshot = await this.snapshotService.gerarSnapshot(
           area.agroPolygonId || '',
           coords,
         );
@@ -514,7 +468,12 @@ export class AreasService {
     }
 
     if (area.agroPolygonId) {
-      await this.integrationsService.deletarPoligono(area.agroPolygonId);
+      try {
+        await this.integrationsService.deletarPoligono(area.agroPolygonId);
+      } catch (e: any) {
+        // Ignora erro caso o polígono já tenha sido excluído pela desativação
+        console.warn(`Aviso ao excluir polígono ${area.agroPolygonId} da API:`, e?.message || e);
+      }
     }
 
     await this.areaRepository.remove(area);

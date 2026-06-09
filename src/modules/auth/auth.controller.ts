@@ -6,7 +6,8 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import type { Request } from 'express';
-import { Put, Delete, UseGuards, Req } from '@nestjs/common';
+import { Put, Patch, Delete, UseGuards, Req } from '@nestjs/common';
+import { PushTokenDto } from './dto/push-token.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -42,5 +43,17 @@ export class AuthController {
   async deleteAccount(@Req() req: Request): Promise<void> {
     const userId = (req.user as any).id;
     await this.authService.deleteAccount(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('push-token')
+  @HttpCode(HttpStatus.OK)
+  async updatePushToken(
+    @Req() req: Request,
+    @Body() dto: PushTokenDto,
+  ): Promise<{ message: string }> {
+    const userId = (req.user as any).id;
+    await this.authService.updatePushToken(userId, dto.token);
+    return { message: 'Push token atualizado com sucesso' };
   }
 }

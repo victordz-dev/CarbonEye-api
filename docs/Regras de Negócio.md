@@ -25,8 +25,8 @@
   - **Histórico de Incêndios (raio de 10km):** Peso máximo de 20 pontos.
   - **Clima Atual:** Peso máximo de 5 pontos.
 
-- **RN08 - Irreversibilidade do Consumo de Cota:**
-  O consumo de área trafegado para a API AgroMonitoring é definitivo. A exclusão de uma área do histórico do usuário não estorna a área (em hectares) consumida do limite mensal.
+- **RN08 - Retorno de Cota no Cancelamento:**
+  O consumo de área trafegado para a API AgroMonitoring é devolvido quando a área é excluída. A exclusão de uma área do histórico do usuário estorna a área (em hectares) consumida do limite mensal, permitindo que o usuário monitore novos polígonos.
 
 - **RN09 - Exibição Segmentada (Monitoramento x Histórico):**
   A interface principal (Home) apenas exibe as áreas cujo `monitoramento_ativo` é verdadeiro. Áreas não monitoradas caem estritamente para a aba de Histórico, com gráficos renderizados a partir do último estado conhecido salvo no banco de dados (Snapshot).

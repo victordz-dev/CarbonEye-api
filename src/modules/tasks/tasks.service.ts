@@ -9,6 +9,7 @@ import { HistoricoSiri } from '../../entities/historicosiri.entity';
 import { Coordenada } from '../geo/geo.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { SiriService } from '../siri/siri.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Point } from 'geojson';
 
 @Injectable()
@@ -26,49 +27,105 @@ export class TasksService {
     private readonly historicoRepository: Repository<HistoricoSiri>,
     private readonly siriService: SiriService,
     private readonly integrationsService: IntegrationsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
-   * Executa a varredura automática diária (à meia-noite) nas áreas sob monitoramento ativo.
+   * Recálculo do Índice SIRI: Executa semanalmente (domingo à meia-noite).
+   * Processamento pesado (Imagens de Satélite).
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async executarMonitoramentoDiario(): Promise<void> {
-    this.logger.log('Iniciando Cron Job de monitoramento diário...');
+  @Cron('0 0 * * 0')
+  async executarAtualizacaoSiriSemanal(): Promise<void> {
+    this.logger.log('Iniciando Cron Job de atualização SIRI semanal...');
 
     const areasMonitoradas = await this.areaRepository.find({
       where: { monitoramentoAtivo: true },
+      relations: ['usuario'],
     });
 
     if (areasMonitoradas.length === 0) {
-      this.logger.log('Nenhuma área ativa cadastrada para monitoramento.');
+      this.logger.log('Nenhuma área ativa cadastrada para monitoramento SIRI.');
       return;
     }
 
     for (const area of areasMonitoradas) {
       try {
         const coords: Coordenada[] = area.geometria.coordinates[0].map(
-          (pt) => ({
+          (pt: number[]) => ({
             longitude: pt[0],
             latitude: pt[1],
           }),
         );
 
-        // 1. Calcula o SIRI com os dados atualizados
+        // Calcula o SIRI com os dados atualizados
         const siri = await this.siriService.calcularSiri(
           coords,
           area.agroPolygonId || '',
         );
 
-        // 2. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
-        const focosAtivos =
-          await this.integrationsService.obterFocosAtivosRecentes(coords);
+        // Atualiza a entidade de Area com a nova nota
+        area.siriAtual = siri.pontuacaoTotal;
+        area.classificacaoAtual = siri.classificacao;
+        area.status =
+          siri.pontuacaoTotal < 40
+            ? 'EMERGENCIA'
+            : siri.pontuacaoTotal < 70
+              ? 'ALERTA'
+              : 'NORMAL';
+        area.ultimaAnalise = new Date();
+        await this.areaRepository.save(area);
+
+        // Grava SEMPRE o novo histórico SIRI no banco para a série temporal
+        const historico = this.historicoRepository.create({
+          areaId: area.id,
+          notaVegetacao: siri.detalhes.vegetacao,
+          notaHistoricoNdvi: siri.detalhes.historico,
+          notaIncendios: siri.detalhes.incendios,
+          notaClima: siri.detalhes.clima,
+          pontuacaoTotal: siri.pontuacaoTotal,
+          classificacaoGeral: siri.classificacao,
+        });
+        await this.historicoRepository.save(historico);
+      } catch (error: unknown) {
+        this.logger.error(
+          `Erro ao processar varredura da área ${area.nome}: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Monitoramento contínuo: Executa de hora em hora para checar focos de incêndio
+   * ativos e condições climáticas extremas.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async monitorarClimaEFogo(): Promise<void> {
+    this.logger.log('Iniciando Cron Job de monitoramento de Clima e Fogo...');
+
+    const areasMonitoradas = await this.areaRepository.find({
+      where: { monitoramentoAtivo: true },
+      relations: ['usuario'],
+    });
+
+    if (areasMonitoradas.length === 0) {
+      return;
+    }
+
+    for (const area of areasMonitoradas) {
+      try {
+        const coords: Coordenada[] = area.geometria.coordinates[0].map(
+          (pt: number[]) => ({
+            longitude: pt[0],
+            latitude: pt[1],
+          }),
+        );
+
+        // 1. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
+        const focosAtivos = await this.integrationsService.obterFocosAtivosRecentes(coords);
 
         if (focosAtivos.length > 0) {
-          this.logger.log(
-            `Detectados ${focosAtivos.length} focos ativos perto da área "${area.nome}".`,
-          );
+          this.logger.log(`Detectados ${focosAtivos.length} focos ativos perto da área "${area.nome}".`);
 
-          // Salva os focos novos na base de dados espacial local
           for (const foco of focosAtivos) {
             const ponto: Point = {
               type: 'Point',
@@ -90,8 +147,7 @@ export class TasksService {
             }
           }
 
-          // Cria alerta de incêndio
-          const mensagem = `Atenção: Novo foco de calor ativo detectado nas proximidades do seu projeto "${area.nome}". O status foi rebaixado para ${siri.classificacao}.`;
+          const mensagem = `Atenção: Novo foco de calor ativo detectado nas proximidades do seu projeto "${area.nome}". O status atual é ${area.classificacaoAtual}.`;
           const novoAlerta = this.alertaRepository.create({
             areaId: area.id,
             tipo: 'INCENDIO',
@@ -99,47 +155,47 @@ export class TasksService {
             lida: false,
           });
           await this.alertaRepository.save(novoAlerta);
+
+          if (area.usuario?.expoPushToken) {
+            await this.notificationsService.sendPushNotification(
+              area.usuario.expoPushToken,
+              '🔥 Risco de Incêndio',
+              mensagem,
+              { areaId: area.id, tipo: 'INCENDIO' },
+            );
+          }
         }
 
-        // 3. Checa por clima extremo
-        const temp = siri.climaAtual.temp;
-        const hum = siri.climaAtual.umidade;
+        // 2. Checa por clima extremo
+        const avgLat = coords.reduce((sum, c) => sum + c.latitude, 0) / coords.length;
+        const avgLon = coords.reduce((sum, c) => sum + c.longitude, 0) / coords.length;
+        const climaAtual = await this.integrationsService.obterClimaAtual(avgLat, avgLon);
+
+        const temp = climaAtual.temp;
+        const hum = climaAtual.umidade;
+
         if (temp > 35 || hum < 20) {
+          const msgClima = `Alerta Climático: Condições extremas registradas na área "${area.nome}". Temperatura: ${temp}°C, Umidade: ${hum}%.`;
           const alertaClima = this.alertaRepository.create({
             areaId: area.id,
             tipo: 'CLIMA',
-            mensagem: `Alerta Climático: Condições extremas registradas na área "${area.nome}". Temperatura: ${temp}°C, Umidade: ${hum}%.`,
+            mensagem: msgClima,
             lida: false,
           });
           await this.alertaRepository.save(alertaClima);
+
+          if (area.usuario?.expoPushToken) {
+            await this.notificationsService.sendPushNotification(
+              area.usuario.expoPushToken,
+              '⚠️ Clima Extremo',
+              msgClima,
+              { areaId: area.id, tipo: 'CLIMA' },
+            );
+          }
         }
-
-        // 4. Atualiza a entidade de Area com a nova nota
-        area.siriAtual = siri.pontuacaoTotal;
-        area.classificacaoAtual = siri.classificacao;
-        area.status =
-          siri.pontuacaoTotal < 40
-            ? 'EMERGENCIA'
-            : siri.pontuacaoTotal < 70
-              ? 'ALERTA'
-              : 'NORMAL';
-        area.ultimaAnalise = new Date();
-        await this.areaRepository.save(area);
-
-        // 5. Grava SEMPRE o novo histórico SIRI no banco para a série temporal
-        const historico = this.historicoRepository.create({
-          areaId: area.id,
-          notaVegetacao: siri.detalhes.vegetacao,
-          notaHistoricoNdvi: siri.detalhes.historico,
-          notaIncendios: siri.detalhes.incendios,
-          notaClima: siri.detalhes.clima,
-          pontuacaoTotal: siri.pontuacaoTotal,
-          classificacaoGeral: siri.classificacao,
-        });
-        await this.historicoRepository.save(historico);
-      } catch (error) {
+      } catch (error: unknown) {
         this.logger.error(
-          `Erro ao processar varredura da área ${area.nome}: ${(error as Error).message}`,
+          `Erro ao processar clima/fogo da área ${area.nome}: ${(error as Error).message}`,
         );
       }
     }
@@ -202,6 +258,7 @@ export class TasksService {
     this.logger.log('Iniciando geração de relatórios mensais...');
     const areasMonitoradas = await this.areaRepository.find({
       where: { monitoramentoAtivo: true },
+      relations: ['usuario'],
     });
 
     for (const area of areasMonitoradas) {
@@ -222,6 +279,15 @@ export class TasksService {
           lida: false,
         });
         await this.alertaRepository.save(novoAlerta);
+
+        if (area.usuario?.expoPushToken) {
+          await this.notificationsService.sendPushNotification(
+            area.usuario.expoPushToken,
+            '📄 Relatório Disponível',
+            mensagem,
+            { areaId: area.id, tipo: 'RELATORIO' },
+          );
+        }
       } catch (error) {
         this.logger.error(
           `Erro ao gerar alerta de relatório para a área ${area.nome}: ${(error as Error).message}`,

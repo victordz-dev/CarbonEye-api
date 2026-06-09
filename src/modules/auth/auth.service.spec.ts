@@ -11,9 +11,9 @@ jest.mock('bcrypt');
 
 describe('AuthService', () => {
   let service: AuthService;
-  let mockUsuarioRepository: any;
-  let mockJwtService: any;
-  let mockLogsService: any;
+  let mockUsuarioRepository: Partial<Record<keyof import('typeorm').Repository<Usuario>, jest.Mock>>;
+  let mockJwtService: Partial<Record<keyof JwtService, jest.Mock>>;
+  let mockLogsService: Partial<Record<keyof LogsService, jest.Mock>>;
 
   beforeEach(async () => {
     mockUsuarioRepository = {

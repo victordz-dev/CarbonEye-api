@@ -1,10 +1,52 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Coordenada } from '../geo/geo.service';
 import { LogsService } from '../logs/logs.service';
 import { NivelLog, OrigemLog } from '../../entities/sistemalog.entity';
 import { HttpException, HttpStatus } from '@nestjs/common';
+
+export function isDentroDoBrasil(coords: Coordenada[]): boolean {
+  for (const c of coords) {
+    if (
+      c.latitude > 5.3 ||
+      c.latitude < -33.8 ||
+      c.longitude > -34.7 ||
+      c.longitude < -74.0
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function isExatamenteNoBrasil(
+  coords: Coordenada[],
+): Promise<boolean> {
+  if (!isDentroDoBrasil(coords)) {
+    return false;
+  }
+
+  try {
+    const lats = coords.map((c) => c.latitude);
+    const lons = coords.map((c) => c.longitude);
+    const avgLat = lats.reduce((sum, val) => sum + val, 0) / coords.length;
+    const avgLon = lons.reduce((sum, val) => sum + val, 0) / coords.length;
+
+    const res = await axios.get(
+      `https://nominatim.openstreetmap.org/reverse?lat=${avgLat}&lon=${avgLon}&format=json`,
+      { headers: { 'User-Agent': 'CarbonEye-TCC-App/1.0' } },
+    );
+
+    const countryCode = res.data?.address?.country_code;
+    return countryCode === 'br';
+  } catch (error) {
+    console.error('Falha ao validar país no Nominatim:', error);
+    return true;
+  }
+}
 
 export interface WeatherData {
   temp: number;
@@ -59,6 +101,7 @@ export class IntegrationsService {
   constructor(
     private readonly configService: ConfigService,
     private readonly logsService: LogsService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {
     this.agroApiKey = this.configService.get<string>(
       'AGROMONITORING_API_KEY',
@@ -105,8 +148,8 @@ export class IntegrationsService {
         { timeout: 15000 }, // 15s timeout
       );
       return response.data.id;
-    } catch (error: any) {
-      const detalhesErro = error.response?.data || error.message;
+    } catch (error: unknown) {
+      const detalhesErro = axios.isAxiosError(error) ? error.response?.data : (error instanceof Error ? error.message : 'Unknown error');
 
       this.logger.error(
         `Erro ao criar polígono no AgroMonitoring: ${JSON.stringify(detalhesErro)}`,
@@ -156,7 +199,7 @@ export class IntegrationsService {
         { timeout: 30000 },
       );
       if (Array.isArray(response.data)) {
-        return response.data.map((poly: any) => ({
+        return response.data.map((poly: { id: string; created_at: number }) => ({
           id: poly.id,
           created_at: poly.created_at,
         }));
@@ -177,6 +220,10 @@ export class IntegrationsService {
     polyId: string,
   ): Promise<{ dataUnix: number; valor: number }[]> {
     try {
+      const cacheKey = `ndvi_history_${polyId}`;
+      const cached = await this.cacheManager.get<{ dataUnix: number; valor: number }[]>(cacheKey);
+      if (cached) return cached;
+
       const end = Math.floor(Date.now() / 1000);
       const start = end - 365 * 24 * 60 * 60; // 1 ano
 
@@ -187,10 +234,12 @@ export class IntegrationsService {
 
       if (Array.isArray(response.data)) {
         response.data.sort((a: AgroNdviItem, b: AgroNdviItem) => a.dt - b.dt);
-        return response.data.map((item: AgroNdviItem) => ({
+        const result = response.data.map((item: AgroNdviItem) => ({
           dataUnix: item.dt,
           valor: item.data?.mean || 0,
         }));
+        await this.cacheManager.set(cacheKey, result, 3600000);
+        return result;
       }
       return [];
     } catch (error) {
@@ -238,6 +287,10 @@ export class IntegrationsService {
     polyId: string,
   ): Promise<{ evi: number; ndwi: number }> {
     try {
+      const cacheKey = `indices_recentes_${polyId}`;
+      const cached = await this.cacheManager.get<{ evi: number; ndwi: number }>(cacheKey);
+      if (cached) return cached;
+
       const end = Math.floor(Date.now() / 1000);
       const start = end - 30 * 24 * 60 * 60; // 30 dias
 
@@ -258,10 +311,12 @@ export class IntegrationsService {
             .catch(() => ({ data: { mean: 0 } })),
         ]);
 
-        return {
+        const result = {
           evi: eviRes.data.mean,
           ndwi: ndwiRes.data.mean,
         };
+        await this.cacheManager.set(cacheKey, result, 3600000);
+        return result;
       }
       return { evi: 0, ndwi: 0 };
     } catch (error) {

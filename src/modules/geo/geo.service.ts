@@ -22,60 +22,7 @@ export function coordenadasParaWktPolygon(coords: Coordenada[]): string {
   return `POLYGON((${pontos.join(', ')}))`;
 }
 
-/**
- * Validação simplificada (Bounding Box) para restringir coordenadas ao território brasileiro.
- * Limites aproximados do Brasil:
- * Norte: 5.27
- * Sul: -33.75
- * Leste: -34.79
- * Oeste: -73.99
- */
-export function isDentroDoBrasil(coords: Coordenada[]): boolean {
-  for (const c of coords) {
-    if (
-      c.latitude > 5.3 ||
-      c.latitude < -33.8 ||
-      c.longitude > -34.7 ||
-      c.longitude < -74.0
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
-/**
- * Validação Absoluta (Reverse Geocoding) usando o centróide do polígono
- * Garante que a área está DE FATO no Brasil, cobrindo contornos exatos.
- */
-export async function isExatamenteNoBrasil(
-  coords: Coordenada[],
-): Promise<boolean> {
-  // Se já estiver fora do Bounding Box, recusa de imediato (otimização)
-  if (!isDentroDoBrasil(coords)) {
-    return false;
-  }
-
-  try {
-    // Calcula o centroide aproximado
-    const lats = coords.map((c) => c.latitude);
-    const lons = coords.map((c) => c.longitude);
-    const avgLat = lats.reduce((sum, val) => sum + val, 0) / coords.length;
-    const avgLon = lons.reduce((sum, val) => sum + val, 0) / coords.length;
-
-    const res = await axios.get(
-      `https://nominatim.openstreetmap.org/reverse?lat=${avgLat}&lon=${avgLon}&format=json`,
-      { headers: { 'User-Agent': 'CarbonEye-TCC-App/1.0' } },
-    );
-
-    const countryCode = res.data?.address?.country_code;
-    return countryCode === 'br';
-  } catch (error) {
-    // Em caso de falha da API externa, assumimos o Bounding Box como fallback de segurança
-    console.error('Falha ao validar país no Nominatim:', error);
-    return true;
-  }
-}
 
 @Injectable()
 export class GeoService {

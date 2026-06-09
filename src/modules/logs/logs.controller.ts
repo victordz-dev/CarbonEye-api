@@ -12,7 +12,7 @@ export class LogsController {
     @Body()
     body: {
       acao: string;
-      detalhes?: any;
+      detalhes?: Record<string, unknown>;
       nivel?: NivelLog;
       usuarioId?: string;
     },

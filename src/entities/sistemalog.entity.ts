@@ -47,5 +47,5 @@ export class SistemaLog extends EntidadeBase {
   acao!: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  detalhes?: any;
+  detalhes?: Record<string, unknown>;
 }

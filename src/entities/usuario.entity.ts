@@ -26,6 +26,9 @@ export class Usuario extends EntidadeBase {
   @DeleteDateColumn({ type: 'timestamp', name: 'excluido_em', nullable: true })
   excluidoEm?: Date;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'expo_push_token' })
+  expoPushToken!: string | null;
+
   @OneToMany(() => Area, (area) => area.usuario)
   areas!: Area[];
 }

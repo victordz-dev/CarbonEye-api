@@ -18,13 +18,14 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:seed": "ts-node src/seeder.ts",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate": "npm run typeorm -- migration:generate -d src/data-source.ts src/migrations/migration",
     "migration:run": "npm run typeorm -- migration:run -d src/data-source.ts",
-    "migration:revert": "npm run typeorm -- migration:revert -d src/data-source.ts"
+    "migration:revert": "npm run typeorm -- migration:revert -d src/data-source.ts",
+    "db:reset": "docker exec carboneye_postgres psql -U carboneye -d carboneye_db -c \"TRUNCATE TABLE usuarios, sistema_logs, historicos_siri, areas, alertas CASCADE;\""
   },
   "dependencies": {
+    "@nestjs/cache-manager": "^3.1.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -36,7 +37,9 @@
     "@nestjs/typeorm": "^11.0.1",
     "axios": "^1.17.0",
     "bcrypt": "^6.0.0",
+    "cache-manager": "^7.2.8",
     "cpf-cnpj-validator": "^2.1.2",
+    "expo-server-sdk": "^6.1.0",
     "nestjs-zod": "^5.4.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

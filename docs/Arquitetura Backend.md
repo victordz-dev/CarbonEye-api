@@ -20,7 +20,7 @@ O NestJS foi estruturado separando os domínios da aplicação, garantindo baixo
 * **`AreasModule`:** Responsável por receber o *Payload* do mobile e lidar com regras complexas, incluindo salvamento de "Snapshots" em JSONB quando o monitoramento de uma área é desativado (offline-history). Delega a geração de relatórios ao `LaudoPdfService`, garantindo o Princípio da Responsabilidade Única (SRP).
 * **`GeoModule`:** Módulo core. Contém os Value Objects (ex: `CoordenadaVO`) e a lógica de comunicação vetorial.
 * **`SiriModule`:** O motor de cálculo. Recebe os dados de vegetação e incêndios para aplicar os pesos matemáticos.
-* **`IntegrationsModule`:** Módulo isolado contendo integrações específicas de satélite.
+* **`IntegrationsModule`:** Módulo isolado contendo integrações específicas de satélite. Implementa Cache local (CacheModule in-memory) para otimizar chamadas pesadas ao histórico de áreas já consultadas.
 * **`AlertasModule`:** Responsável pela injeção e gerência do fluxo de notificações do usuário, controlando estados de leitura e persistência.
 
 ## 4. Pipeline de Processamento e Tratamento de Dados
@@ -29,15 +29,15 @@ O tráfego de uma requisição segue um fluxo estrito de validação:
 1. **Camada de Transporte (Controller):** Recebe a requisição HTTP.
 2. **Validação Rigorosa (Pipes/VOs):** O payload é injetado no `CoordenadaVO` que rejeita instantaneamente latitudes fora da métrica (-90 a 90) ou longitudes inválidas antes de prosseguir.
 3. **Regra de Negócio (Service):**
-   * Dispara processos assíncronos e lógicas de negócio do domínio.
+   * Dispara processos assíncronos e lógicas de negócio do domínio. Algumas requisições (como a geração de snapshots de histórico) paralelizam chamadas externas (`Promise.all()`) para máxima performance.
 4. **Camada de Acesso a Dados (Repository):** Persiste os relatórios e entidades herdadas da `EntidadeBase` no TypeORM.
 
 ## 5. Orquestração de Integrações e Estratégia de Rede
 A complexidade do backend do CarbonEye exige o tratamento cuidadoso das APIs externas. Contudo, em nome da performance da arquitetura, promoveu-se uma divisão de responsabilidades com o Front-end:
 
-* **AgroMonitoring API:** O backend aciona o `POST /polygons` de forma segura. Apenas os polígonos validados geomêtricamente ganham acesso a essa requisição para poupar franquia do pacote em nuvem.
+* **AgroMonitoring API:** O backend aciona o `POST /polygons` de forma segura. Apenas os polígonos validados geomêtricamente ganham acesso a essa requisição para poupar franquia do pacote em nuvem. O Backend processa o histórico vegetacional (NDVI) armazenando em cache.
 * **NASA FIRMS:** Utilizada para detecção ativa de anomalias térmicas num raio de abrangência da área.
-* **OpenWeather API (Delegação ao Client-Side):** Originalmente arquitetado no Backend, a chamada climática pesada (60 req/minuto) foi delegada diretamente ao aplicativo Frontend. Isso desonera a CPU do servidor e impede o estrangulamento da chave pública, aproveitando o IP descentralizado de cada usuário final para a consulta climática.
+* **OpenWeather API:** Acionada pelo Backend durante a avaliação do SIRI e varredura noturna para incorporar índices climáticos atuais (temperatura e umidade) aos cálculos de risco.
 
 ## 6. Monitoramento Contínuo e Alertas (Mock e Cron Jobs)
 Para cumprir o requisito de monitoramento ativo:
@@ -47,4 +47,5 @@ Para cumprir o requisito de monitoramento ativo:
 
 ## 7. Segurança e Validação
 * **Herança Segura:** A propriedade das áreas é garantida pelo relacionamento FK vinculado ao Token (`@GetUser`), blindando consultas cruzadas.
+* **Tratamento de Erros:** O sistema intercepta erros sistêmicos por meio de um `AllExceptionsFilter` Global, garantindo que o Frontend receba apenas códigos HTTP formatados sem vazar metadados sensíveis do servidor.
 * **Logs e Auditoria:** As ações críticas geram eventos na tabela `SistemaLog` persistida no PostGIS.

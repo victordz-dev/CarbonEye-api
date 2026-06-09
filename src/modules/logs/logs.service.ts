@@ -21,7 +21,7 @@ export class LogsService {
     origem?: OrigemLog;
     usuarioId?: string;
     acao: string;
-    detalhes?: Record<string, any>;
+    detalhes?: Record<string, unknown>;
   }): Promise<void> {
     try {
       const detalhesSeguros = this.higienizarDetalhes(dados.detalhes);
@@ -44,21 +44,22 @@ export class LogsService {
   }
 
   private higienizarDetalhes(
-    detalhes?: Record<string, any>,
-  ): Record<string, any> | null {
-    if (!detalhes) return null;
+    detalhes?: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    if (!detalhes) return undefined;
 
     try {
       const copia = JSON.parse(JSON.stringify(detalhes));
       const camposSensiveis = ['senha', 'password', 'token', 'authorization'];
 
-      const recursivo = (obj: any) => {
+      const recursivo = (obj: unknown) => {
         if (!obj || typeof obj !== 'object') return;
-        for (const key in obj) {
-          if (typeof obj[key] === 'object' && obj[key] !== null) {
-            recursivo(obj[key]);
+        const record = obj as Record<string, unknown>;
+        for (const key in record) {
+          if (typeof record[key] === 'object' && record[key] !== null) {
+            recursivo(record[key]);
           } else if (camposSensiveis.includes(key.toLowerCase())) {
-            obj[key] = '[OCULTO_POR_SEGURANCA]';
+            record[key] = '[OCULTO_POR_SEGURANCA]';
           }
         }
       };

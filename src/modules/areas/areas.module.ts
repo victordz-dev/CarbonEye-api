@@ -9,6 +9,7 @@ import { GeoModule } from '../geo/geo.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { SiriModule } from '../siri/siri.module';
 import { LaudoPdfService } from './laudo-pdf.service';
+import { SnapshotService } from './snapshot.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { LaudoPdfService } from './laudo-pdf.service';
     SiriModule,
   ],
   controllers: [AreasController],
-  providers: [AreasService, LaudoPdfService],
+  providers: [AreasService, LaudoPdfService, SnapshotService],
   exports: [AreasService],
 })
 export class AreasModule {}

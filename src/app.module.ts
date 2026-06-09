@@ -18,6 +18,7 @@ import { AreasModule } from './modules/areas/areas.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { LogsModule } from './modules/logs/logs.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -72,6 +73,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     TasksModule,
     LogsModule,
     AlertasModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

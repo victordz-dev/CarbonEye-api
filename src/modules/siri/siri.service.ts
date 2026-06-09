@@ -4,6 +4,7 @@ import {
   IntegrationsService,
   WeatherData,
 } from '../integrations/integrations.service';
+import { SIRI_CONSTANTS } from './siri.constants';
 
 export interface SiriScoreResult {
   pontuacaoTotal: number;
@@ -48,11 +49,18 @@ export class SiriService {
     try {
       this.logger.log(`Iniciando cálculo do SIRI para o polígono ${polyId}...`);
 
-      // 1. Saúde da Vegetação Atual (max 45 pontos)
-      const ndviData =
-        await this.integrationsService.obterHistoricoNdvi(polyId);
+      const centroid = obterCentroide(coords);
 
-      // Filtra outliers (valores < 0.1) e extrai apenas os números para o cálculo SIRI
+      // Paraleliza as chamadas a serviços externos
+      const [ndviData, indicesExtra, focosIncendio, clima, dadosSolo] = await Promise.all([
+        this.integrationsService.obterHistoricoNdvi(polyId),
+        this.integrationsService.obterIndicesRecentes(polyId),
+        this.geoService.obterQuantidadeFocosNoEntorno(coords, 12),
+        this.integrationsService.obterClimaAtual(centroid.latitude, centroid.longitude),
+        this.integrationsService.obterDadosSolo(polyId)
+      ]);
+
+      // 1. Saúde da Vegetação Atual
       const ndviHistory = ndviData
         .map((item) => item.valor)
         .filter((valor) => valor >= 0.1);
@@ -60,119 +68,94 @@ export class SiriService {
       const ndviAtual =
         ndviHistory.length > 0 ? ndviHistory[ndviHistory.length - 1] : 0.75;
 
-      const indicesExtra =
-        await this.integrationsService.obterIndicesRecentes(polyId);
-
       let notaVegetacao = 0;
-      // Melhora a nota da vegetação combinando NDVI e EVI se o EVI for forte
       const saudeMax = Math.max(ndviAtual, indicesExtra.evi);
-      if (saudeMax >= 0.8) {
-        notaVegetacao = 45;
-      } else if (saudeMax >= 0.7) {
-        notaVegetacao = 40;
-      } else if (saudeMax >= 0.6) {
-        notaVegetacao = 35;
-      } else if (saudeMax >= 0.5) {
-        notaVegetacao = 25;
-      } else if (saudeMax >= 0.4) {
-        notaVegetacao = 15;
+      
+      if (saudeMax >= SIRI_CONSTANTS.VEGETACAO_OTIMA) {
+        notaVegetacao = SIRI_CONSTANTS.PONTUACAO_VEGETACAO_OTIMA;
+      } else if (saudeMax >= SIRI_CONSTANTS.VEGETACAO_BOA) {
+        notaVegetacao = SIRI_CONSTANTS.PONTUACAO_VEGETACAO_BOA;
+      } else if (saudeMax >= SIRI_CONSTANTS.VEGETACAO_REGULAR) {
+        notaVegetacao = SIRI_CONSTANTS.PONTUACAO_VEGETACAO_REGULAR;
+      } else if (saudeMax >= SIRI_CONSTANTS.VEGETACAO_ATENCAO) {
+        notaVegetacao = SIRI_CONSTANTS.PONTUACAO_VEGETACAO_ATENCAO;
+      } else if (saudeMax >= SIRI_CONSTANTS.VEGETACAO_CRITICA) {
+        notaVegetacao = SIRI_CONSTANTS.PONTUACAO_VEGETACAO_CRITICA;
       } else {
         notaVegetacao = 0;
       }
 
-      // Se NDWI (Água na folha) for muito baixo, penaliza a nota de vegetação (-5 pts)
-      if (indicesExtra.ndwi < -0.1) {
-        notaVegetacao = Math.max(0, notaVegetacao - 5);
+      if (indicesExtra.ndwi < SIRI_CONSTANTS.LIMIAR_NDWI_ESTRESSE) {
+        notaVegetacao = Math.max(0, notaVegetacao - SIRI_CONSTANTS.PENALIDADE_NDWI);
       }
 
-      // 2. Tendência Histórica da Vegetação (max 30 pontos)
-      let notaHistorico = 20; // Estabilidade padrão se faltarem dados
+      // 2. Tendência Histórica da Vegetação
+      let notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_ESTAVEL;
       let variacaoPercentual = 0;
+      
       if (ndviHistory.length >= 6) {
         const count = ndviHistory.length;
-        const mediaRecente =
-          (ndviHistory[count - 1] +
-            ndviHistory[count - 2] +
-            ndviHistory[count - 3]) /
-          3;
-        const mediaAntiga =
-          (ndviHistory[0] + ndviHistory[1] + ndviHistory[2]) / 3;
-        variacaoPercentual =
-          ((mediaRecente - mediaAntiga) / (mediaAntiga || 0.1)) * 100;
+        const mediaRecente = (ndviHistory[count - 1] + ndviHistory[count - 2] + ndviHistory[count - 3]) / 3;
+        const mediaAntiga = (ndviHistory[0] + ndviHistory[1] + ndviHistory[2]) / 3;
+        variacaoPercentual = ((mediaRecente - mediaAntiga) / (mediaAntiga || 0.1)) * 100;
 
-        if (variacaoPercentual > 10) {
-          notaHistorico = 30;
-        } else if (variacaoPercentual >= 5) {
-          notaHistorico = 25;
-        } else if (variacaoPercentual >= -5) {
-          notaHistorico = 20;
-        } else if (variacaoPercentual >= -10) {
-          notaHistorico = 10;
+        if (variacaoPercentual > SIRI_CONSTANTS.HISTORICO_CRESCIMENTO_ALTO) {
+          notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_CRESCIMENTO_ALTO;
+        } else if (variacaoPercentual >= SIRI_CONSTANTS.HISTORICO_CRESCIMENTO_MEDIO) {
+          notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_CRESCIMENTO_MEDIO;
+        } else if (variacaoPercentual >= SIRI_CONSTANTS.HISTORICO_QUEDA_MEDIA) {
+          notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_ESTAVEL;
+        } else if (variacaoPercentual >= SIRI_CONSTANTS.HISTORICO_QUEDA_ALTA) {
+          notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_QUEDA_MEDIA;
         } else {
-          notaHistorico = 0;
+          notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_QUEDA_ALTA;
         }
       }
 
-      // 3. Histórico de Incêndios (max 20 pontos)
-      const focosIncendio = await this.geoService.obterQuantidadeFocosNoEntorno(
-        coords,
-        12,
-      );
+      // 3. Histórico de Incêndios
       let notaIncendios = 0;
-      if (focosIncendio === 0) {
-        notaIncendios = 20;
-      } else if (focosIncendio <= 3) {
-        notaIncendios = 15;
-      } else if (focosIncendio <= 10) {
-        notaIncendios = 10;
-      } else if (focosIncendio <= 20) {
-        notaIncendios = 5;
+      if (focosIncendio === SIRI_CONSTANTS.INCENDIOS_NENHUM) {
+        notaIncendios = SIRI_CONSTANTS.PONTUACAO_INCENDIOS_NENHUM;
+      } else if (focosIncendio <= SIRI_CONSTANTS.INCENDIOS_BAIXO) {
+        notaIncendios = SIRI_CONSTANTS.PONTUACAO_INCENDIOS_BAIXO;
+      } else if (focosIncendio <= SIRI_CONSTANTS.INCENDIOS_MEDIO) {
+        notaIncendios = SIRI_CONSTANTS.PONTUACAO_INCENDIOS_MEDIO;
+      } else if (focosIncendio <= SIRI_CONSTANTS.INCENDIOS_ALTO) {
+        notaIncendios = SIRI_CONSTANTS.PONTUACAO_INCENDIOS_ALTO;
       } else {
-        notaIncendios = 0;
+        notaIncendios = SIRI_CONSTANTS.PONTUACAO_INCENDIOS_CRITICO;
       }
 
-      // 4. Fatores Climáticos (max 5 pontos)
-      const centroid = obterCentroide(coords);
-      const clima = await this.integrationsService.obterClimaAtual(
-        centroid.latitude,
-        centroid.longitude,
-      );
+      // 4. Fatores Climáticos
+      let notaClima = SIRI_CONSTANTS.PONTUACAO_CLIMA_MEDIO_RISCO;
 
-      let notaClima = 3; // Risco Médio padrão
-      const dadosSolo = await this.integrationsService.obterDadosSolo(polyId);
-
-      // Usando Umidade do Solo (moisture m3/m3) para ajudar na nota
-      // Se umidade do solo > 0.15 e temp < 30, é ótimo.
-      // Se umidade do solo < 0.05 ou temp > 35, muito ruim.
       if (
-        clima.umidade > 40 &&
-        clima.temp < 30 &&
-        clima.vento < 15 &&
-        dadosSolo.umidade >= 0.1
+        clima.umidade > SIRI_CONSTANTS.CLIMA_UMIDADE_AR_IDEAL &&
+        clima.temp < SIRI_CONSTANTS.CLIMA_TEMP_IDEAL &&
+        clima.vento < SIRI_CONSTANTS.CLIMA_VENTO_IDEAL &&
+        dadosSolo.umidade >= SIRI_CONSTANTS.SOLO_UMIDADE_IDEAL
       ) {
-        notaClima = 5; // Baixo Risco
+        notaClima = SIRI_CONSTANTS.PONTUACAO_CLIMA_BAIXO_RISCO;
       } else if (
-        clima.umidade < 20 ||
-        clima.temp > 35 ||
-        clima.vento > 30 ||
-        dadosSolo.umidade < 0.05
+        clima.umidade < SIRI_CONSTANTS.CLIMA_UMIDADE_AR_CRITICO ||
+        clima.temp > SIRI_CONSTANTS.CLIMA_TEMP_CRITICA ||
+        clima.vento > SIRI_CONSTANTS.CLIMA_VENTO_CRITICO ||
+        dadosSolo.umidade < SIRI_CONSTANTS.SOLO_UMIDADE_CRITICA
       ) {
-        notaClima = 0; // Alto Risco
+        notaClima = SIRI_CONSTANTS.PONTUACAO_CLIMA_ALTO_RISCO;
       }
 
-      let pontuacaoTotal =
-        notaVegetacao + notaHistorico + notaIncendios + notaClima;
+      let pontuacaoTotal = notaVegetacao + notaHistorico + notaIncendios + notaClima;
 
       // Penalidade para áreas severamente degradadas ou urbanizadas
-      if (ndviAtual < 0.25) {
-        pontuacaoTotal = Math.min(pontuacaoTotal, 35);
+      if (ndviAtual < SIRI_CONSTANTS.LIMIAR_NDVI_DEGRADADO) {
+        pontuacaoTotal = Math.min(pontuacaoTotal, SIRI_CONSTANTS.TETO_PONTUACAO_DEGRADADO);
       }
 
-      let classificacao =
-        'Área com Baixo Risco Ambiental (Potencialmente Classificável)';
-      if (pontuacaoTotal < 40) {
+      let classificacao = 'Área com Baixo Risco Ambiental (Potencialmente Classificável)';
+      if (pontuacaoTotal < SIRI_CONSTANTS.CLASSIFICACAO_ATENCAO_MIN) {
         classificacao = 'Área Sob Risco Ambiental';
-      } else if (pontuacaoTotal < 70) {
+      } else if (pontuacaoTotal < SIRI_CONSTANTS.CLASSIFICACAO_BAIXO_RISCO_MIN) {
         classificacao = 'Área em Atenção';
       }
 
@@ -192,12 +175,8 @@ export class SiriService {
         classificacao,
       };
     } catch (error) {
-      this.logger.error(
-        `Erro no cálculo do índice SIRI: ${(error as Error).message}`,
-      );
-      throw new Error(
-        `Falha no cálculo do laudo SIRI: ${(error as Error).message}`,
-      );
+      this.logger.error(`Erro no cálculo do índice SIRI: ${(error as Error).message}`);
+      throw new Error(`Falha no cálculo do laudo SIRI: ${(error as Error).message}`);
     }
   }
 }

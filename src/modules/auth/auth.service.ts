@@ -37,15 +37,23 @@ export class AuthService {
   async register(dto: RegisterDto): Promise<AuthResponse> {
     const existingEmail = await this.usuarioRepository.findOne({
       where: { email: dto.email },
+      withDeleted: true,
     });
     if (existingEmail) {
+      if (existingEmail.excluidoEm) {
+        throw new ConflictException('Este e-mail pertence a uma conta que foi excluída. Entre em contato com o suporte para restaurar o acesso.');
+      }
       throw new ConflictException('E-mail já cadastrado.');
     }
 
     const existingCpf = await this.usuarioRepository.findOne({
       where: { cpf: dto.cpf },
+      withDeleted: true,
     });
     if (existingCpf) {
+      if (existingCpf.excluidoEm) {
+        throw new ConflictException('Este CPF pertence a uma conta que foi excluída. Entre em contato com o suporte para restaurar o acesso.');
+      }
       throw new ConflictException('CPF já cadastrado.');
     }
 
@@ -151,10 +159,11 @@ export class AuthService {
       if (dto.email && dto.email !== usuario.email) {
         const emailExiste = await this.usuarioRepository.findOne({
           where: { email: dto.email },
+          withDeleted: true,
         });
         if (emailExiste) {
           throw new ConflictException(
-            'O novo e-mail já está em uso por outro usuário.',
+            'O novo e-mail já está em uso por outro usuário (ou pertence a uma conta excluída).',
           );
         }
         usuario.email = dto.email;
@@ -208,6 +217,24 @@ export class AuthService {
       nivel: NivelLog.INFO,
       origem: OrigemLog.BACKEND,
       detalhes: { email: usuario.email },
+    });
+  }
+
+  async updatePushToken(userId: string, token: string): Promise<void> {
+    const usuario = await this.usuarioRepository.findOne({ where: { id: userId } });
+    if (!usuario) {
+      throw new NotFoundException('Usuário não encontrado.');
+    }
+
+    usuario.expoPushToken = token;
+    await this.usuarioRepository.save(usuario);
+
+    await this.logsService.registrarLog({
+      acao: 'Push Token Atualizado',
+      usuarioId: userId,
+      nivel: NivelLog.INFO,
+      origem: OrigemLog.BACKEND,
+      detalhes: { token },
     });
   }
 }
