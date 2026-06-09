@@ -10,6 +10,8 @@ import {
   HttpCode,
   HttpStatus,
   Res,
+  ParseUUIDPipe,
+  StreamableFile,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AreasService } from './areas.service';
@@ -20,6 +22,7 @@ import {
 import { AnalisarAreaDto } from './dto/analisar-area.dto';
 import { SalvarAreaDto } from './dto/salvar-area.dto';
 import { AlternarMonitoramentoDto } from './dto/alternar-monitoramento.dto';
+import { RenomearAreaDto } from './dto/renomear-area.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { Area } from '../../entities/area.entity';
@@ -64,7 +67,7 @@ export class AreasController {
   @HttpCode(HttpStatus.OK)
   async obterHistoricoArea(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
+    @Param('id', new ParseUUIDPipe()) areaId: string,
   ): Promise<HistoricoAreaResponse> {
     return this.areasService.obterHistoricoArea(usuarioId, areaId);
   }
@@ -73,9 +76,9 @@ export class AreasController {
   @HttpCode(HttpStatus.OK)
   async obterLaudoPdf(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
-    @Res() res: Response,
-  ): Promise<void> {
+    @Param('id', new ParseUUIDPipe()) areaId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
     const pdfBuffer = await this.laudoPdfService.gerarLaudoPdf(
       usuarioId,
       areaId,
@@ -83,16 +86,15 @@ export class AreasController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="laudo-siri-${areaId}.pdf"`,
-      'Content-Length': pdfBuffer.length,
     });
-    res.end(pdfBuffer);
+    return new StreamableFile(pdfBuffer);
   }
 
   @Patch(':id/monitoramento')
   @HttpCode(HttpStatus.OK)
   async alternarMonitoramento(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
+    @Param('id', new ParseUUIDPipe()) areaId: string,
     @Body() dto: AlternarMonitoramentoDto,
   ): Promise<{ mensagem: string }> {
     return this.areasService.alternarMonitoramento(usuarioId, areaId, dto);
@@ -102,7 +104,7 @@ export class AreasController {
   @HttpCode(HttpStatus.OK)
   async excluirArea(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
+    @Param('id', new ParseUUIDPipe()) areaId: string,
   ): Promise<{ mensagem: string }> {
     return this.areasService.excluirArea(usuarioId, areaId);
   }
@@ -111,17 +113,17 @@ export class AreasController {
   @HttpCode(HttpStatus.OK)
   async renomearArea(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
-    @Body('nome') novoNome: string,
+    @Param('id', new ParseUUIDPipe()) areaId: string,
+    @Body() dto: RenomearAreaDto,
   ): Promise<{ mensagem: string }> {
-    return this.areasService.renomearArea(usuarioId, areaId, novoNome);
+    return this.areasService.renomearArea(usuarioId, areaId, dto.nome);
   }
 
   @Post(':id/alertas/mock')
   @HttpCode(HttpStatus.CREATED)
   async criarAlertaMock(
     @GetUser('id') usuarioId: string,
-    @Param('id') areaId: string,
+    @Param('id', new ParseUUIDPipe()) areaId: string,
   ): Promise<{ mensagem: string }> {
     return this.areasService.criarAlertaMock(usuarioId, areaId);
   }

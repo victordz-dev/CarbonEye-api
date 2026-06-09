@@ -147,7 +147,7 @@ As áreas monitoradas passam por atualizações periódicas dos indicadores ambi
 Sempre que forem identificados eventos potencialmente relevantes, como focos de incêndio próximos à área monitorada, degradação da vegetação ou condições climáticas adversas, o sistema gera notificações para o usuário.
 
 **Via de Mão Única e Offline-First:**
-Caso o usuário decida cessar o monitoramento, a área é removida da Home e migrada estritamente para a tela de Histórico. Trata-se de uma via de mão única: a área ganha um "snapshot" (registro fotográfico imutável dos últimos dados captados) no banco e encerra o consumo de APIs na nuvem, servindo apenas para consultas vitálicias em modo offline.
+Caso o usuário decida cessar o monitoramento, a área é removida da Home e migrada estritamente para a tela de Histórico. Trata-se de uma via de mão única: o polígono é excluído da API AgroMonitoring e a área ganha um "snapshot" (registro estático imutável dos últimos dados captados) no banco, servindo apenas para consultas vitalícias em modo offline.
 
 **Modo de Simulação (Mock):**
 Para fins de auditoria, demonstração acadêmica e validação de engenharia (Global Solution), o CarbonEye permite injeção manual de Alertas Simulados através de uma Área de Testes escondida. O avaliador pode forçar a injeção de incêndios ou crises climáticas para visualizar como a interface e as notificações reagem sem precisar aguardar um desastre real.

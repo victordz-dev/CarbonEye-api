@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SiriService, obterCentroide } from './siri.service';
+import { SiriService } from './siri.service';
 import { GeoService } from '../geo/geo.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { SIRI_CONSTANTS } from './siri.constants';
@@ -40,17 +40,6 @@ describe('SiriService', () => {
     expect(service).toBeDefined();
   });
 
-  describe('obterCentroide', () => {
-    it('deve retornar o centroide correto', () => {
-      const coords = [
-        { latitude: 0, longitude: 0 },
-        { latitude: 10, longitude: 10 },
-      ];
-      const centroide = obterCentroide(coords);
-      expect(centroide).toEqual({ latitude: 5, longitude: 5 });
-    });
-  });
-
   describe('calcularSiri', () => {
     const defaultCoords = [
       { latitude: -10, longitude: -50 },
@@ -62,15 +51,14 @@ describe('SiriService', () => {
     it('deve calcular a nota máxima (100) para condições ideais', async () => {
       // Setup mocks
       integrationsService.obterHistoricoNdvi.mockResolvedValue([
-        { data: '1', valor: 0.6 },
-        { data: '2', valor: 0.6 },
-        { data: '3', valor: 0.6 },
-        { data: '4', valor: 0.8 },
-        { data: '5', valor: 0.8 },
-        { data: '6', valor: 0.85 }, // Crescimento alto (> 10%) e ótimo (> 0.8)
+        { dataUnix: 1, valor: 0.6 },
+        { dataUnix: 2, valor: 0.6 },
+        { dataUnix: 3, valor: 0.6 },
+        { dataUnix: 4, valor: 0.8 },
+        { dataUnix: 5, valor: 0.8 },
+        { dataUnix: 6, valor: 0.85 }, // Crescimento alto (> 10%) e ótimo (> 0.8)
       ]);
       integrationsService.obterIndicesRecentes.mockResolvedValue({
-        ndvi: 0.85,
         evi: 0.8,
         ndwi: 0.2, // Sem penalidade
       });
@@ -81,7 +69,6 @@ describe('SiriService', () => {
         temp: 25,
         umidade: 60, // Ideal
         vento: 10, // Ideal
-        condicao: 'Clear',
       });
       integrationsService.obterDadosSolo.mockResolvedValue({
         tempSuperficie: 25,
@@ -103,15 +90,14 @@ describe('SiriService', () => {
     it('deve calcular a nota e aplicar penalidade de área severamente degradada', async () => {
       // Setup mocks
       integrationsService.obterHistoricoNdvi.mockResolvedValue([
-        { data: '1', valor: 0.2 },
-        { data: '2', valor: 0.2 },
-        { data: '3', valor: 0.2 },
-        { data: '4', valor: 0.1 },
-        { data: '5', valor: 0.1 },
-        { data: '6', valor: 0.1 }, // Degradado (< 0.25)
+        { dataUnix: 1, valor: 0.2 },
+        { dataUnix: 2, valor: 0.2 },
+        { dataUnix: 3, valor: 0.2 },
+        { dataUnix: 4, valor: 0.1 },
+        { dataUnix: 5, valor: 0.1 },
+        { dataUnix: 6, valor: 0.1 }, // Degradado (< 0.25)
       ]);
       integrationsService.obterIndicesRecentes.mockResolvedValue({
-        ndvi: 0.1,
         evi: 0.1,
         ndwi: -0.2, // Estresse hídrico
       });
@@ -122,7 +108,6 @@ describe('SiriService', () => {
         temp: 40, // Muito quente
         umidade: 10, // Muito seco
         vento: 35, // Muito vento
-        condicao: 'Clear',
       });
       integrationsService.obterDadosSolo.mockResolvedValue({
         tempSuperficie: 45,

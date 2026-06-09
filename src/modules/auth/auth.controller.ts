@@ -1,13 +1,13 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService, AuthResponse } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import type { Request } from 'express';
-import { Put, Patch, Delete, UseGuards, Req } from '@nestjs/common';
+import { Put, Patch, Delete, UseGuards } from '@nestjs/common';
 import { PushTokenDto } from './dto/push-token.dto';
+import { GetUser } from '../../decorators/get-user.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -27,32 +27,32 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Put('profile')
   @HttpCode(HttpStatus.OK)
   async updateProfile(
-    @Req() req: Request,
+    @GetUser('id') userId: string,
     @Body() dto: UpdateProfileDto,
   ): Promise<AuthResponse> {
-    const userId = (req.user as any).id;
     return this.authService.updateProfile(userId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Delete('profile')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteAccount(@Req() req: Request): Promise<void> {
-    const userId = (req.user as any).id;
+  async deleteAccount(@GetUser('id') userId: string): Promise<void> {
     await this.authService.deleteAccount(userId);
   }
 
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Patch('push-token')
   @HttpCode(HttpStatus.OK)
   async updatePushToken(
-    @Req() req: Request,
+    @GetUser('id') userId: string,
     @Body() dto: PushTokenDto,
   ): Promise<{ message: string }> {
-    const userId = (req.user as any).id;
     await this.authService.updatePushToken(userId, dto.token);
     return { message: 'Push token atualizado com sucesso' };
   }

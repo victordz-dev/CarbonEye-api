@@ -15,15 +15,20 @@ import { JwtStrategy } from './jwt.strategy';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>(
-          'JWT_SECRET',
-          'super_secret_carboneye_jwt_key_123!',
-        ),
-        signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN', '7d') as '7d',
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error(
+            'FATAL: JWT_SECRET não está definido nas variáveis de ambiente. A aplicação não pode inicializar sem um segredo JWT.',
+          );
+        }
+        return {
+          secret,
+          signOptions: {
+            expiresIn: (configService.get<string>('JWT_EXPIRES_IN') || '7d') as any,
+          },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

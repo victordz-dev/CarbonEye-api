@@ -6,11 +6,15 @@ import { Area } from '../../entities/area.entity';
 import { FocoIncendio } from '../../entities/focoincendio.entity';
 import { Alerta } from '../../entities/alerta.entity';
 import { HistoricoSiri } from '../../entities/historicosiri.entity';
-import { Coordenada } from '../geo/geo.service';
+import type { Coordenada } from '../geo/geo.types';
+import { obterCentroide } from '../geo/geo.utils';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { SiriService } from '../siri/siri.service';
+import { obterStatusPorPontuacao } from '../siri/siri.utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Point } from 'geojson';
+
+const CRON_CONCURRENCY = 3;
 
 @Injectable()
 export class TasksService {
@@ -31,6 +35,175 @@ export class TasksService {
   ) {}
 
   /**
+   * Extrai coordenadas de uma área a partir do GeoJSON armazenado.
+   */
+  private extrairCoordenadas(area: Area): Coordenada[] {
+    return area.geometria.coordinates[0].map(
+      (pt: number[]) => ({
+        longitude: pt[0],
+        latitude: pt[1],
+      }),
+    );
+  }
+
+  /**
+   * Processa uma área individual para o cron de atualização SIRI semanal.
+   */
+  private async processarAreaSiri(area: Area): Promise<void> {
+    const coords = this.extrairCoordenadas(area);
+
+    // Calcula o SIRI com os dados atualizados
+    const siri = await this.siriService.calcularSiri(
+      coords,
+      area.agroPolygonId || '',
+    );
+
+    // Atualiza a entidade de Area com a nova nota
+    area.siriAtual = siri.pontuacaoTotal;
+    area.classificacaoAtual = siri.classificacao;
+    area.status = obterStatusPorPontuacao(siri.pontuacaoTotal);
+    area.ultimaAnalise = new Date();
+    await this.areaRepository.save(area);
+
+    // Grava SEMPRE o novo histórico SIRI no banco para a série temporal
+    const historico = this.historicoRepository.create({
+      areaId: area.id,
+      notaVegetacao: siri.detalhes.vegetacao,
+      notaHistoricoNdvi: siri.detalhes.historico,
+      notaIncendios: siri.detalhes.incendios,
+      notaClima: siri.detalhes.clima,
+      pontuacaoTotal: siri.pontuacaoTotal,
+      classificacaoGeral: siri.classificacao,
+    });
+    await this.historicoRepository.save(historico);
+  }
+
+  /**
+   * Processa uma área individual para o cron de monitoramento de clima e fogo.
+   */
+  private async processarAreaClimaFogo(area: Area): Promise<void> {
+    const coords = this.extrairCoordenadas(area);
+
+    // 1. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
+    const focosAtivos = await this.integrationsService.obterFocosAtivosRecentes(coords);
+
+    if (focosAtivos.length > 0) {
+      this.logger.log(`Detectados ${focosAtivos.length} focos ativos perto da área "${area.nome}".`);
+
+      for (const foco of focosAtivos) {
+        const ponto: Point = {
+          type: 'Point',
+          coordinates: [foco.longitude, foco.latitude],
+        };
+
+        // Deduplicação composta: coordenada + janela temporal
+        const jaExiste = await this.focoRepository
+          .createQueryBuilder('f')
+          .where(
+            'ST_DWithin(f.geometria, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 0.001)',
+          )
+          .andWhere('f.data BETWEEN :inicio AND :fim')
+          .setParameters({
+            lon: foco.longitude,
+            lat: foco.latitude,
+            inicio: new Date(foco.data.getTime() - 30 * 60000),
+            fim: new Date(foco.data.getTime() + 30 * 60000),
+          })
+          .getOne();
+
+        if (!jaExiste) {
+          const novoFoco = this.focoRepository.create({
+            geometria: ponto,
+            data: foco.data,
+            satelite: 'VIIRS',
+            confianca: 80,
+          });
+          await this.focoRepository.save(novoFoco);
+        }
+      }
+
+      const mensagem = `Atenção: Novo foco de calor ativo detectado nas proximidades do seu projeto "${area.nome}". O status atual é ${area.classificacaoAtual}.`;
+      const novoAlerta = this.alertaRepository.create({
+        areaId: area.id,
+        tipo: 'INCENDIO',
+        mensagem,
+        lida: false,
+      });
+      await this.alertaRepository.save(novoAlerta);
+
+      if (area.usuario?.expoPushToken) {
+        await this.notificationsService.sendPushNotification(
+          area.usuario.expoPushToken,
+          '🔥 Risco de Incêndio',
+          mensagem,
+          { areaId: area.id, tipo: 'INCENDIO' },
+        );
+      }
+    }
+
+    // 2. Checa por clima extremo
+    const centroide = obterCentroide(coords);
+    const climaAtual = await this.integrationsService.obterClimaAtual(
+      centroide.latitude,
+      centroide.longitude,
+    );
+
+    if (climaAtual) {
+      const temp = climaAtual.temp;
+      const hum = climaAtual.umidade;
+
+      if (temp > 35 || hum < 20) {
+        const msgClima = `Alerta Climático: Condições extremas registradas na área "${area.nome}". Temperatura: ${temp}°C, Umidade: ${hum}%.`;
+        const alertaClima = this.alertaRepository.create({
+          areaId: area.id,
+          tipo: 'CLIMA',
+          mensagem: msgClima,
+          lida: false,
+        });
+        await this.alertaRepository.save(alertaClima);
+
+        if (area.usuario?.expoPushToken) {
+          await this.notificationsService.sendPushNotification(
+            area.usuario.expoPushToken,
+            '⚠️ Clima Extremo',
+            msgClima,
+            { areaId: area.id, tipo: 'CLIMA' },
+          );
+        }
+      }
+    } else {
+      this.logger.warn(
+        `Dados climáticos indisponíveis para área "${area.nome}". Verificação de clima extremo ignorada.`,
+      );
+    }
+  }
+
+  /**
+   * Processa um array de áreas em paralelo com concorrência controlada.
+   */
+  private async processarComConcorrencia<T>(
+    areas: Area[],
+    processador: (area: Area) => Promise<T>,
+    contexto: string,
+  ): Promise<void> {
+    for (let i = 0; i < areas.length; i += CRON_CONCURRENCY) {
+      const chunk = areas.slice(i, i + CRON_CONCURRENCY);
+      const resultados = await Promise.allSettled(
+        chunk.map((area) => processador(area)),
+      );
+
+      for (let j = 0; j < resultados.length; j++) {
+        const resultado = resultados[j];
+        if (resultado.status === 'rejected') {
+          this.logger.error(
+            `Erro ao processar ${contexto} da área ${chunk[j].nome}: ${resultado.reason}`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
    * Recálculo do Índice SIRI: Executa semanalmente (domingo à meia-noite).
    * Processamento pesado (Imagens de Satélite).
    */
@@ -48,50 +221,11 @@ export class TasksService {
       return;
     }
 
-    for (const area of areasMonitoradas) {
-      try {
-        const coords: Coordenada[] = area.geometria.coordinates[0].map(
-          (pt: number[]) => ({
-            longitude: pt[0],
-            latitude: pt[1],
-          }),
-        );
-
-        // Calcula o SIRI com os dados atualizados
-        const siri = await this.siriService.calcularSiri(
-          coords,
-          area.agroPolygonId || '',
-        );
-
-        // Atualiza a entidade de Area com a nova nota
-        area.siriAtual = siri.pontuacaoTotal;
-        area.classificacaoAtual = siri.classificacao;
-        area.status =
-          siri.pontuacaoTotal < 40
-            ? 'EMERGENCIA'
-            : siri.pontuacaoTotal < 70
-              ? 'ALERTA'
-              : 'NORMAL';
-        area.ultimaAnalise = new Date();
-        await this.areaRepository.save(area);
-
-        // Grava SEMPRE o novo histórico SIRI no banco para a série temporal
-        const historico = this.historicoRepository.create({
-          areaId: area.id,
-          notaVegetacao: siri.detalhes.vegetacao,
-          notaHistoricoNdvi: siri.detalhes.historico,
-          notaIncendios: siri.detalhes.incendios,
-          notaClima: siri.detalhes.clima,
-          pontuacaoTotal: siri.pontuacaoTotal,
-          classificacaoGeral: siri.classificacao,
-        });
-        await this.historicoRepository.save(historico);
-      } catch (error: unknown) {
-        this.logger.error(
-          `Erro ao processar varredura da área ${area.nome}: ${(error as Error).message}`,
-        );
-      }
-    }
+    await this.processarComConcorrencia(
+      areasMonitoradas,
+      (area) => this.processarAreaSiri(area),
+      'varredura SIRI',
+    );
   }
 
   /**
@@ -111,94 +245,11 @@ export class TasksService {
       return;
     }
 
-    for (const area of areasMonitoradas) {
-      try {
-        const coords: Coordenada[] = area.geometria.coordinates[0].map(
-          (pt: number[]) => ({
-            longitude: pt[0],
-            latitude: pt[1],
-          }),
-        );
-
-        // 1. Busca anomalias térmicas (queimadas ativas recentes no raio de 10km)
-        const focosAtivos = await this.integrationsService.obterFocosAtivosRecentes(coords);
-
-        if (focosAtivos.length > 0) {
-          this.logger.log(`Detectados ${focosAtivos.length} focos ativos perto da área "${area.nome}".`);
-
-          for (const foco of focosAtivos) {
-            const ponto: Point = {
-              type: 'Point',
-              coordinates: [foco.longitude, foco.latitude],
-            };
-
-            const existe = await this.focoRepository.findOne({
-              where: { data: foco.data },
-            });
-
-            if (!existe) {
-              const novoFoco = this.focoRepository.create({
-                geometria: ponto,
-                data: foco.data,
-                satelite: 'VIIRS',
-                confianca: 80,
-              });
-              await this.focoRepository.save(novoFoco);
-            }
-          }
-
-          const mensagem = `Atenção: Novo foco de calor ativo detectado nas proximidades do seu projeto "${area.nome}". O status atual é ${area.classificacaoAtual}.`;
-          const novoAlerta = this.alertaRepository.create({
-            areaId: area.id,
-            tipo: 'INCENDIO',
-            mensagem,
-            lida: false,
-          });
-          await this.alertaRepository.save(novoAlerta);
-
-          if (area.usuario?.expoPushToken) {
-            await this.notificationsService.sendPushNotification(
-              area.usuario.expoPushToken,
-              '🔥 Risco de Incêndio',
-              mensagem,
-              { areaId: area.id, tipo: 'INCENDIO' },
-            );
-          }
-        }
-
-        // 2. Checa por clima extremo
-        const avgLat = coords.reduce((sum, c) => sum + c.latitude, 0) / coords.length;
-        const avgLon = coords.reduce((sum, c) => sum + c.longitude, 0) / coords.length;
-        const climaAtual = await this.integrationsService.obterClimaAtual(avgLat, avgLon);
-
-        const temp = climaAtual.temp;
-        const hum = climaAtual.umidade;
-
-        if (temp > 35 || hum < 20) {
-          const msgClima = `Alerta Climático: Condições extremas registradas na área "${area.nome}". Temperatura: ${temp}°C, Umidade: ${hum}%.`;
-          const alertaClima = this.alertaRepository.create({
-            areaId: area.id,
-            tipo: 'CLIMA',
-            mensagem: msgClima,
-            lida: false,
-          });
-          await this.alertaRepository.save(alertaClima);
-
-          if (area.usuario?.expoPushToken) {
-            await this.notificationsService.sendPushNotification(
-              area.usuario.expoPushToken,
-              '⚠️ Clima Extremo',
-              msgClima,
-              { areaId: area.id, tipo: 'CLIMA' },
-            );
-          }
-        }
-      } catch (error: unknown) {
-        this.logger.error(
-          `Erro ao processar clima/fogo da área ${area.nome}: ${(error as Error).message}`,
-        );
-      }
-    }
+    await this.processarComConcorrencia(
+      areasMonitoradas,
+      (area) => this.processarAreaClimaFogo(area),
+      'clima/fogo',
+    );
   }
 
   /**

@@ -1,3 +1,5 @@
+# Diagrama de Entidade-Relacionamento (MER)
+
 ```mermaid
 erDiagram
     ENTIDADE_BASE {
@@ -11,13 +13,14 @@ erDiagram
         VARCHAR email UK
         VARCHAR senha
         TIMESTAMP excluido_em
+        VARCHAR expo_push_token
     }
     
     AREAS {
         UUID usuario_id FK
         VARCHAR nome
         GEOMETRY geometria
-        ENUM status
+        VARCHAR status
         INT siri_atual
         VARCHAR classificacao_atual
         TIMESTAMP ultima_analise
@@ -58,6 +61,14 @@ erDiagram
         GEOMETRY geom
     }
 
+    FOCOS_INCENDIO {
+        UUID id PK
+        GEOMETRY geometria
+        TIMESTAMP data
+        VARCHAR satelite
+        INT confianca
+    }
+
     ENTIDADE_BASE ||--o{ USUARIOS : "herda (POO)"
     ENTIDADE_BASE ||--o{ AREAS : "herda (POO)"
     ENTIDADE_BASE ||--o{ HISTORICOS_SIRI : "herda (POO)"
@@ -67,4 +78,5 @@ erDiagram
     USUARIOS ||--o{ AREAS : "possui (1:N)"
     AREAS ||--o{ HISTORICOS_SIRI : "registra (1:N)"
     AREAS ||--o{ ALERTAS : "dispara (1:N)"
+    USUARIOS ||--o{ SISTEMA_LOGS : "gera (1:N)"
 ```

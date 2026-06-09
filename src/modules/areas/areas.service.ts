@@ -9,17 +9,12 @@ import { Repository, DataSource } from 'typeorm';
 import { Area } from '../../entities/area.entity';
 import { HistoricoSiri } from '../../entities/historicosiri.entity';
 import { Alerta } from '../../entities/alerta.entity';
-import {
-  GeoService,
-  Coordenada,
-  coordenadasParaWktPolygon,
-} from '../geo/geo.service';
+import { GeoService } from '../geo/geo.service';
+import type { Coordenada } from '../geo/geo.types';
+import { coordenadasParaWktPolygon, fecharPoligono } from '../geo/geo.utils';
 import { SiriService } from '../siri/siri.service';
-import {
-  IntegrationsService,
-  isDentroDoBrasil,
-  isExatamenteNoBrasil,
-} from '../integrations/integrations.service';
+import { obterStatusPorPontuacao } from '../siri/siri.utils';
+import { IntegrationsService } from '../integrations/integrations.service';
 import { LogsService } from '../logs/logs.service';
 import { SnapshotService } from './snapshot.service';
 import { NivelLog, OrigemLog } from '../../entities/sistemalog.entity';
@@ -30,7 +25,6 @@ import {
   TAMANHO_MINIMO_HA,
   COTA_MAXIMA_USUARIO_HA,
   CONVERSAO_M2_HA,
-  RAIO_FOCOS_HORAS,
 } from './areas.constants';
 
 import {
@@ -75,7 +69,7 @@ export class AreasService {
         detalhes: { quantidadePontos: coords.length },
       });
 
-      const dentroBrasil = await isExatamenteNoBrasil(coords);
+      const dentroBrasil = await this.geoService.isExatamenteNoBrasil(coords);
       if (!dentroBrasil) {
         throw new BadRequestException(
           'O polígono desenhado possui coordenadas fora do território brasileiro. Esta aplicação restringe o monitoramento estritamente ao Brasil.',
@@ -85,11 +79,7 @@ export class AreasService {
       const wkt = coordenadasParaWktPolygon(coords);
 
       // 1. Calcula o tamanho do polígono no PostGIS
-      const areaResult = (await this.areaRepository.query(
-        'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
-        [wkt],
-      )) as unknown as { area_m2: string }[];
-      const areaM2 = parseFloat(areaResult[0].area_m2);
+      const areaM2 = await this.geoService.calcularAreaM2(wkt);
       const areaHa = areaM2 / CONVERSAO_M2_HA;
 
       // Valida teto mínimo por consulta
@@ -100,11 +90,8 @@ export class AreasService {
       }
 
       // Check total global user quota (only for active monitoring)
-      const totalAreaResult = await this.areaRepository.query(
-        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1 AND monitoramento_ativo = true',
-        [usuarioId],
-      );
-      const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
+      const totalUserM2 =
+        await this.geoService.calcularAreaTotalUsuarioM2(usuarioId);
       const totalUserHa = totalUserM2 / CONVERSAO_M2_HA;
 
       if (totalUserHa + areaHa > COTA_MAXIMA_USUARIO_HA) {
@@ -180,7 +167,9 @@ export class AreasService {
     let areaSalva: Area | undefined;
 
     try {
-      const dentroBrasil = await isExatamenteNoBrasil(dto.poligono);
+      const dentroBrasil = await this.geoService.isExatamenteNoBrasil(
+        dto.poligono,
+      );
       if (!dentroBrasil) {
         throw new BadRequestException(
           'O polígono desenhado possui coordenadas fora do território brasileiro. Esta aplicação restringe o monitoramento estritamente ao Brasil.',
@@ -189,11 +178,7 @@ export class AreasService {
 
       const wkt = coordenadasParaWktPolygon(dto.poligono);
 
-      const areaResult = (await this.areaRepository.query(
-        'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
-        [wkt],
-      )) as unknown as { area_m2: string }[];
-      const areaM2 = parseFloat(areaResult[0].area_m2);
+      const areaM2 = await this.geoService.calcularAreaM2(wkt);
       const areaHa = areaM2 / CONVERSAO_M2_HA;
 
       if (areaHa < TAMANHO_MINIMO_HA) {
@@ -202,11 +187,8 @@ export class AreasService {
         );
       }
 
-      const totalAreaResult = await this.areaRepository.query(
-        'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1 AND monitoramento_ativo = true',
-        [usuarioId],
-      );
-      const totalUserM2 = parseFloat(totalAreaResult[0]?.total_m2 || '0');
+      const totalUserM2 =
+        await this.geoService.calcularAreaTotalUsuarioM2(usuarioId);
       const totalUserHa = totalUserM2 / CONVERSAO_M2_HA;
 
       if (totalUserHa + areaHa > COTA_MAXIMA_USUARIO_HA) {
@@ -235,19 +217,7 @@ export class AreasService {
         siri = await this.siriService.calcularSiri(dto.poligono, polyId);
       }
 
-      const formattedCoords = dto.poligono.map((c) => [
-        c.longitude,
-        c.latitude,
-      ]);
-      const primeiroPonto = formattedCoords[0];
-      const ultimoPonto = formattedCoords[formattedCoords.length - 1];
-
-      if (
-        primeiroPonto[0] !== ultimoPonto[0] ||
-        primeiroPonto[1] !== ultimoPonto[1]
-      ) {
-        formattedCoords.push(primeiroPonto);
-      }
+      const formattedCoords = fecharPoligono(dto.poligono);
       const geometria: Polygon = {
         type: 'Polygon',
         coordinates: [formattedCoords],
@@ -257,12 +227,7 @@ export class AreasService {
         usuarioId,
         nome: dto.nome,
         geometria,
-        status:
-          siri.pontuacaoTotal < 40
-            ? 'EMERGENCIA'
-            : siri.pontuacaoTotal < 70
-              ? 'ALERTA'
-              : 'NORMAL',
+        status: obterStatusPorPontuacao(siri.pontuacaoTotal),
         siriAtual: siri.pontuacaoTotal,
         classificacaoAtual: siri.classificacao,
         monitoramentoAtivo: dto.monitoramento_ativo,
@@ -293,8 +258,10 @@ export class AreasService {
           await this.areaRepository.save(areaSalva);
           await this.integrationsService.deletarPoligono(polyId);
           polyId = undefined; // Nullify since we deleted it
-        } catch (e) {
-          console.warn('Falha ao deletar polígono descartável na API:', e);
+        } catch (e: unknown) {
+          this.logger.warn(
+            `Falha ao deletar polígono descartável na API: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
 
@@ -355,15 +322,7 @@ export class AreasService {
       throw new NotFoundException('Área não encontrada.');
     }
 
-    const geoResult = await this.areaRepository.query(
-      'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-      [area.id],
-    );
-    const geojson = JSON.parse(geoResult[0].geojson);
-    const coords: Coordenada[] = geojson.coordinates[0].map((pt: number[]) => ({
-      longitude: pt[0],
-      latitude: pt[1],
-    }));
+    const coords = await this.geoService.extrairCoordenadasDaArea(area.id);
 
     if (area.monitoramentoAtivo === false && area.snapshotDetalhes) {
       return area.snapshotDetalhes;
@@ -372,10 +331,9 @@ export class AreasService {
     return this.snapshotService.gerarSnapshot(area.agroPolygonId || '', coords);
   }
 
-
-
   /**
-   * Ativa ou pausa o monitoramento contínuo de uma área
+   * Desativa o monitoramento contínuo de uma área (via de mão única).
+   * O polígono é excluído da API AgroMonitoring e um snapshot é salvo.
    */
   async alternarMonitoramento(
     usuarioId: string,
@@ -389,31 +347,16 @@ export class AreasService {
       throw new NotFoundException('Área não encontrada.');
     }
 
-    if (dto.monitoramento_ativo) {
-      // Valida limite de 2 ativos
-      const countAtivos = await this.areaRepository.count({
-        where: { usuarioId, monitoramentoAtivo: true },
-      });
-      if (countAtivos >= 2 && !area.monitoramentoAtivo) {
-        throw new BadRequestException(
-          'Você já possui 2 mapas em monitoramento contínuo ativo. Pause um deles para prosseguir.',
-        );
-      }
+    // Via de mão única: não permite reativação
+    if (dto.monitoramento_ativo && !area.monitoramentoAtivo) {
+      throw new BadRequestException(
+        'Não é possível reativar o monitoramento de uma área já desativada. O polígono foi removido da API de satélite. Cadastre uma nova área se desejar monitorar novamente.',
+      );
     }
 
     if (!dto.monitoramento_ativo && area.monitoramentoAtivo) {
       // Obter coordenadas para gerar o snapshot
-      const geoResult = await this.areaRepository.query(
-        'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-        [area.id],
-      );
-      const geojson = JSON.parse(geoResult[0].geojson);
-      const coords: Coordenada[] = geojson.coordinates[0].map(
-        (pt: number[]) => ({
-          longitude: pt[0],
-          latitude: pt[1],
-        }),
-      );
+      const coords = await this.geoService.extrairCoordenadasDaArea(area.id);
 
       // Gera o snapshot
       try {
@@ -422,21 +365,19 @@ export class AreasService {
           coords,
         );
         area.snapshotDetalhes = snapshot;
-      } catch (e) {
-        console.warn(
-          'Não foi possível gerar o snapshot ao desativar monitoramento',
-          e,
+      } catch (e: unknown) {
+        this.logger.warn(
+          `Não foi possível gerar o snapshot ao desativar monitoramento: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
 
-      // Exclui da API para economizar limites
+      // Exclui da API para economizar limites (irreversível)
       if (area.agroPolygonId) {
         try {
           await this.integrationsService.deletarPoligono(area.agroPolygonId);
-        } catch (e) {
-          console.warn(
-            'Falha ao deletar polígono da API no alternarMonitoramento:',
-            e,
+        } catch (e: unknown) {
+          this.logger.warn(
+            `Falha ao deletar polígono da API no alternarMonitoramento: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
       }
@@ -446,9 +387,7 @@ export class AreasService {
     await this.areaRepository.save(area);
 
     return {
-      mensagem: dto.monitoramento_ativo
-        ? 'Monitoramento ativado com sucesso.'
-        : 'Monitoramento pausado e snapshot gerado com sucesso.',
+      mensagem: 'Monitoramento desativado e snapshot gerado com sucesso.',
     };
   }
 
@@ -470,9 +409,12 @@ export class AreasService {
     if (area.agroPolygonId) {
       try {
         await this.integrationsService.deletarPoligono(area.agroPolygonId);
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Ignora erro caso o polígono já tenha sido excluído pela desativação
-        console.warn(`Aviso ao excluir polígono ${area.agroPolygonId} da API:`, e?.message || e);
+        const msg = e instanceof Error ? e.message : String(e);
+        this.logger.warn(
+          `Aviso ao excluir polígono ${area.agroPolygonId} da API: ${msg}`,
+        );
       }
     }
 
@@ -537,10 +479,6 @@ export class AreasService {
 
     if (!area) {
       throw new NotFoundException('Área não encontrada.');
-    }
-
-    if (!novoNome || novoNome.trim() === '') {
-      throw new BadRequestException('O nome não pode estar vazio.');
     }
 
     area.nome = novoNome.trim();

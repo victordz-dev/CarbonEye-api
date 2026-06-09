@@ -1,11 +1,4 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  CreateDateColumn,
-  DeleteDateColumn,
-  OneToMany,
-} from 'typeorm';
+import { Entity, Column, DeleteDateColumn, OneToMany } from 'typeorm';
 import { Area } from './area.entity';
 import { EntidadeBase } from './base.entity';
 
@@ -26,7 +19,12 @@ export class Usuario extends EntidadeBase {
   @DeleteDateColumn({ type: 'timestamp', name: 'excluido_em', nullable: true })
   excluidoEm?: Date;
 
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'expo_push_token' })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'expo_push_token',
+  })
   expoPushToken!: string | null;
 
   @OneToMany(() => Area, (area) => area.usuario)

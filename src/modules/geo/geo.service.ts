@@ -1,36 +1,30 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { TerritorioProtegido } from '../../entities/territorioprotegido.entity';
 import { FocoIncendio } from '../../entities/focoincendio.entity';
 import axios from 'axios';
+import type { Coordenada } from './geo.types';
+import {
+  coordenadasParaWktPolygon,
+  obterCentroide,
+  isDentroDoBrasil,
+} from './geo.utils';
 
-export interface Coordenada {
-  latitude: number;
-  longitude: number;
-}
-
-export function coordenadasParaWktPolygon(coords: Coordenada[]): string {
-  if (coords.length < 3) {
-    throw new Error('Um polígono necessita de pelo menos 3 pontos.');
-  }
-  const pontos = coords.map((c) => `${c.longitude} ${c.latitude}`);
-  // Garante que o polígono esteja fechado para o PostGIS
-  if (pontos[0] !== pontos[pontos.length - 1]) {
-    pontos.push(pontos[0]);
-  }
-  return `POLYGON((${pontos.join(', ')}))`;
-}
-
-
+// Re-exportar types e utils para manter compatibilidade de imports existentes
+export type { Coordenada } from './geo.types';
+export { coordenadasParaWktPolygon, obterCentroide } from './geo.utils';
 
 @Injectable()
 export class GeoService {
+  private readonly logger = new Logger(GeoService.name);
+
   constructor(
     @InjectRepository(TerritorioProtegido)
     private readonly territorioRepository: Repository<TerritorioProtegido>,
     @InjectRepository(FocoIncendio)
     private readonly focoRepository: Repository<FocoIncendio>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -92,6 +86,79 @@ export class GeoService {
       throw new Error(
         `Erro na busca de queimadas no entorno: ${(error as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * Calcula a área em metros quadrados de um polígono WKT usando PostGIS.
+   */
+  async calcularAreaM2(wkt: string): Promise<number> {
+    const result = (await this.dataSource.query(
+      'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
+      [wkt],
+    )) as { area_m2: string }[];
+    return parseFloat(result[0].area_m2);
+  }
+
+  /**
+   * Calcula a área total (m²) de todas as áreas com monitoramento ativo de um usuário.
+   */
+  async calcularAreaTotalUsuarioM2(usuarioId: string): Promise<number> {
+    const result = (await this.dataSource.query(
+      'SELECT SUM(ST_Area(geometria::geography)) as total_m2 FROM areas WHERE usuario_id = $1 AND monitoramento_ativo = true',
+      [usuarioId],
+    )) as { total_m2: string | null }[];
+    return parseFloat(result[0]?.total_m2 || '0');
+  }
+
+  /**
+   * Extrai as coordenadas de uma área salva no banco a partir do seu GeoJSON.
+   */
+  async extrairCoordenadasDaArea(areaId: string): Promise<Coordenada[]> {
+    const result = (await this.dataSource.query(
+      'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
+      [areaId],
+    )) as { geojson: string }[];
+
+    if (!result?.[0]?.geojson) {
+      throw new NotFoundException(
+        'Geometria não encontrada para a área informada.',
+      );
+    }
+
+    const geojson = JSON.parse(result[0].geojson) as {
+      coordinates: number[][][];
+    };
+    return geojson.coordinates[0].map((pt: number[]) => ({
+      longitude: pt[0],
+      latitude: pt[1],
+    }));
+  }
+
+  /**
+   * Valida se as coordenadas estão dentro do Brasil consultando a API do Nominatim.
+   * Verifica primeiro pela bounding box e depois por reverse geocoding do centroide.
+   */
+  async isExatamenteNoBrasil(coords: Coordenada[]): Promise<boolean> {
+    if (!isDentroDoBrasil(coords)) {
+      return false;
+    }
+
+    try {
+      const centroide = obterCentroide(coords);
+
+      const res = await axios.get(
+        `https://nominatim.openstreetmap.org/reverse?lat=${centroide.latitude}&lon=${centroide.longitude}&format=json`,
+        { headers: { 'User-Agent': 'CarbonEye-TCC-App/1.0' } },
+      );
+
+      const countryCode = res.data?.address?.country_code;
+      return countryCode === 'br';
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao validar país no Nominatim: ${(error as Error).message}. Assumindo válido.`,
+      );
+      return true;
     }
   }
 }

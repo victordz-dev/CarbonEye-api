@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { GeoService, Coordenada } from '../geo/geo.service';
+import { GeoService } from '../geo/geo.service';
+import type { Coordenada } from '../geo/geo.types';
+import { obterCentroide } from '../geo/geo.utils';
 import {
   IntegrationsService,
   WeatherData,
@@ -20,14 +22,6 @@ export interface SiriScoreResult {
   };
   climaAtual: WeatherData;
   classificacao: string;
-}
-
-export function obterCentroide(coords: Coordenada[]): Coordenada {
-  const lats = coords.map((c) => c.latitude);
-  const lons = coords.map((c) => c.longitude);
-  const avgLat = lats.reduce((sum, val) => sum + val, 0) / coords.length;
-  const avgLon = lons.reduce((sum, val) => sum + val, 0) / coords.length;
-  return { latitude: avgLat, longitude: avgLon };
 }
 
 @Injectable()
@@ -52,13 +46,28 @@ export class SiriService {
       const centroid = obterCentroide(coords);
 
       // Paraleliza as chamadas a serviços externos
-      const [ndviData, indicesExtra, focosIncendio, clima, dadosSolo] = await Promise.all([
+      const [ndviData, indicesExtraRaw, focosIncendio, climaRaw, dadosSoloRaw] = await Promise.all([
         this.integrationsService.obterHistoricoNdvi(polyId),
         this.integrationsService.obterIndicesRecentes(polyId),
         this.geoService.obterQuantidadeFocosNoEntorno(coords, 12),
         this.integrationsService.obterClimaAtual(centroid.latitude, centroid.longitude),
         this.integrationsService.obterDadosSolo(polyId)
       ]);
+
+      // Fallback seguro para dados indisponíveis (sem dados mockados realistas)
+      const indicesExtra = indicesExtraRaw ?? { evi: 0, ndwi: 0 };
+      const clima = climaRaw ?? { temp: 25, umidade: 50, vento: 10 };
+      const dadosSolo = dadosSoloRaw ?? { umidade: 0.1, tempSuperficie: 20 };
+
+      if (!climaRaw) {
+        this.logger.warn('Dados climáticos indisponíveis. Usando valores neutros para o cálculo.');
+      }
+      if (!indicesExtraRaw) {
+        this.logger.warn('Índices EVI/NDWI indisponíveis. Usando valores neutros.');
+      }
+      if (!dadosSoloRaw) {
+        this.logger.warn('Dados de solo indisponíveis. Usando valores neutros.');
+      }
 
       // 1. Saúde da Vegetação Atual
       const ndviHistory = ndviData
@@ -91,13 +100,12 @@ export class SiriService {
 
       // 2. Tendência Histórica da Vegetação
       let notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_ESTAVEL;
-      let variacaoPercentual = 0;
       
       if (ndviHistory.length >= 6) {
         const count = ndviHistory.length;
         const mediaRecente = (ndviHistory[count - 1] + ndviHistory[count - 2] + ndviHistory[count - 3]) / 3;
         const mediaAntiga = (ndviHistory[0] + ndviHistory[1] + ndviHistory[2]) / 3;
-        variacaoPercentual = ((mediaRecente - mediaAntiga) / (mediaAntiga || 0.1)) * 100;
+        const variacaoPercentual = ((mediaRecente - mediaAntiga) / (mediaAntiga || 0.1)) * 100;
 
         if (variacaoPercentual > SIRI_CONSTANTS.HISTORICO_CRESCIMENTO_ALTO) {
           notaHistorico = SIRI_CONSTANTS.PONTUACAO_HISTORICO_CRESCIMENTO_ALTO;

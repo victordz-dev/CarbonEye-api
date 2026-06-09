@@ -18,16 +18,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usuarioRepository: Repository<Usuario>,
     configService: ConfigService,
   ) {
+    const secret = configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error(
+        'FATAL: JWT_SECRET não está definido nas variáveis de ambiente.',
+      );
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         ExtractJwt.fromUrlQueryParameter('token'),
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>(
-        'JWT_SECRET',
-        'super_secret_carboneye_jwt_key_123!',
-      ),
+      secretOrKey: secret,
     });
   }
 

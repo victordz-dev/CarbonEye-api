@@ -234,7 +234,7 @@ export class AuthService {
       usuarioId: userId,
       nivel: NivelLog.INFO,
       origem: OrigemLog.BACKEND,
-      detalhes: { token },
+      detalhes: { tokenPreview: token.substring(0, 20) + '***' },
     });
   }
 }

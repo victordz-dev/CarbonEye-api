@@ -36,18 +36,18 @@
 
 ## UC02 - Parar o Monitoramento Contínuo (Via de Mão Única)
 **Ator Principal:** Usuário  
-**Descrição:** O usuário escolhe uma área que está sendo monitorada e decide arquivá-hor, cessando o processamento em nuvem.  
+**Descrição:** O usuário escolhe uma área monitorada e decide cessá-la definitivamente, arquivando-a no histórico.  
 **Pré-condições:** A área deve possuir `monitoramento_ativo = true`.
 
 **Fluxo Principal:**
 1. O usuário acessa o Laudo da área na Home ou no Mapa.
 2. O usuário clica no botão para "Desativar Monitoramento".
 3. O sistema operacional mobile solicita permissão para enviar Notificações Push (apenas na primeira vez).
-3. O Backend atualiza o status do banco de dados (`monitoramento_ativo = false`), desativa futuras chamadas da API AgroMonitoring para essa geometria e salva um Snapshot estático do laudo atual em JSONB.
+3. O Backend gera um Snapshot estático do laudo atual em JSONB, exclui o polígono da API AgroMonitoring e atualiza o status no banco (`monitoramento_ativo = false`).
 4. A área deixa de aparecer no Dashboard principal (Home) e migra de forma vitalícia e irreversível para a aba "Histórico".
 
 **Fluxos de Exceção e Alternativos:**
-* *1a. Via de Mão Única:* Se o usuário tentar reativar o monitoramento de uma área do histórico, o botão não estará disponível, exigindo que ele cadastre um novo polígono consumindo nova cota se desejar monitorar novamente.
+* *1a. Via de Mão Única:* Se o usuário tentar reativar o monitoramento, o backend retorna erro informando que o polígono foi excluído da API de satélite e que é necessário cadastrar uma nova área.
 
 ---
 

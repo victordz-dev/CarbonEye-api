@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Area } from '../../entities/area.entity';
-import { Coordenada, coordenadasParaWktPolygon } from '../geo/geo.service';
+import { GeoService } from '../geo/geo.service';
+import { coordenadasParaWktPolygon } from '../geo/geo.utils';
 import PDFDocument from 'pdfkit';
 import { CONVERSAO_M2_HA } from './areas.constants';
 
@@ -11,6 +12,7 @@ export class LaudoPdfService {
   constructor(
     @InjectRepository(Area)
     private readonly areaRepository: Repository<Area>,
+    private readonly geoService: GeoService,
   ) {}
 
   async gerarLaudoPdf(usuarioId: string, areaId: string): Promise<Buffer> {
@@ -23,22 +25,10 @@ export class LaudoPdfService {
       throw new NotFoundException('Área não encontrada.');
     }
 
-    const geoResult = await this.areaRepository.query(
-      'SELECT ST_AsGeoJSON(geometria) as geojson FROM areas WHERE id = $1',
-      [area.id],
-    );
-    const geojson = JSON.parse(geoResult[0].geojson);
-    const coords: Coordenada[] = geojson.coordinates[0].map((pt: number[]) => ({
-      longitude: pt[0],
-      latitude: pt[1],
-    }));
+    const coords = await this.geoService.extrairCoordenadasDaArea(area.id);
     const wkt = coordenadasParaWktPolygon(coords);
 
-    const areaResult = (await this.areaRepository.query(
-      'SELECT ST_Area(ST_GeomFromText($1, 4326)::geography) as area_m2',
-      [wkt],
-    )) as unknown as { area_m2: string }[];
-    const areaM2 = parseFloat(areaResult[0].area_m2);
+    const areaM2 = await this.geoService.calcularAreaM2(wkt);
     const areaHa = areaM2 / CONVERSAO_M2_HA;
 
     return new Promise<Buffer>((resolve, reject) => {

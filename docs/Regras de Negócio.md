@@ -25,14 +25,14 @@
   - **Histórico de Incêndios (raio de 10km):** Peso máximo de 20 pontos.
   - **Clima Atual:** Peso máximo de 5 pontos.
 
-- **RN08 - Retorno de Cota no Cancelamento:**
-  O consumo de área trafegado para a API AgroMonitoring é devolvido quando a área é excluída. A exclusão de uma área do histórico do usuário estorna a área (em hectares) consumida do limite mensal, permitindo que o usuário monitore novos polígonos.
+- **RN08 - Retorno de Cota na Exclusão:**
+  A cota de hectares consumida pela área é devolvida automaticamente quando a área é excluída pelo usuário. Isso permite reutilizar o espaço de cota para novas análises.
 
 - **RN09 - Exibição Segmentada (Monitoramento x Histórico):**
   A interface principal (Home) apenas exibe as áreas cujo `monitoramento_ativo` é verdadeiro. Áreas não monitoradas caem estritamente para a aba de Histórico, com gráficos renderizados a partir do último estado conhecido salvo no banco de dados (Snapshot).
 
 - **RN10 - Via de Mão Única no Monitoramento:**
-  O ato de cessar o monitoramento de uma área é definitivo (via de mão única). Uma vez marcado como "Não Monitorar", a API do AgroMonitoring não é mais consumida e o polígono é salvo de forma imutável via JSONB (Snapshot) na tabela de Áreas para visualização vitalícia offline, não sendo possível retomar a assinatura contínua daquela exata área posteriormente.
+  O ato de cessar o monitoramento de uma área é definitivo (via de mão única). Uma vez desativado, o polígono é excluído da API AgroMonitoring e um snapshot estático é salvo em JSONB na tabela de Áreas para visualização vitalícia offline. Não é possível retomar o monitoramento daquela área — o usuário deve cadastrar um novo polígono.
 
 - **RN11 - Homologação de Alertas Climáticos (Mocks):**
   Dado que desastres ambientais são imprevisíveis, o sistema provê nativamente um ambiente simulado ("Área de Testes" em Configurações) onde o usuário pode disparar intencionalmente Alertas Falsos de Queimadas ou Eventos Climáticos para comprovar a recepção de push-notifications ou atualizações do feed em tempo real.

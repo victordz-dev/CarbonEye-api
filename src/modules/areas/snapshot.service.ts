@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { GeoService, Coordenada } from '../geo/geo.service';
+import { GeoService } from '../geo/geo.service';
+import type { Coordenada } from '../geo/geo.types';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { HistoricoAreaResponse } from './areas.interfaces';
-import { RAIO_FOCOS_HORAS } from './areas.constants';
+import { RAIO_FOCOS_MESES } from './areas.constants';
 
 @Injectable()
 export class SnapshotService {
@@ -24,12 +25,12 @@ export class SnapshotService {
       };
     }
 
-    const [rawNdviValores, indicesExtra, dadosSolo, quantidadeFocos] =
+    const [rawNdviValores, indicesExtraRaw, dadosSoloRaw, quantidadeFocos] =
       await Promise.all([
         this.integrationsService.obterHistoricoNdvi(agroPolygonId),
         this.integrationsService.obterIndicesRecentes(agroPolygonId),
         this.integrationsService.obterDadosSolo(agroPolygonId),
-        this.geoService.obterQuantidadeFocosNoEntorno(coords, RAIO_FOCOS_HORAS),
+        this.geoService.obterQuantidadeFocosNoEntorno(coords, RAIO_FOCOS_MESES),
       ]);
 
     const ndviMensalMap = new Map<string, { soma: number; qtd: number }>();
@@ -57,10 +58,10 @@ export class SnapshotService {
     return {
       linha_do_tempo_ndvi: ndviTimeline,
       ocorrencias_incendio: quantidadeFocos,
-      evi_atual: indicesExtra.evi,
-      ndwi_atual: indicesExtra.ndwi,
-      umidade_solo: dadosSolo.umidade,
-      temp_solo: dadosSolo.tempSuperficie,
+      evi_atual: indicesExtraRaw?.evi,
+      ndwi_atual: indicesExtraRaw?.ndwi,
+      umidade_solo: dadosSoloRaw?.umidade,
+      temp_solo: dadosSoloRaw?.tempSuperficie,
       imagem_satelite_truecolor: 'https://picsum.photos/id/10/400/300',
       imagem_satelite_ndvi: 'https://picsum.photos/id/10/400/300',
     };
