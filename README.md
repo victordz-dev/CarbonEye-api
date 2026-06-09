@@ -87,6 +87,7 @@ A pasta [`/docs`](./docs) contém a documentação completa do sistema:
 | [Diagrama MER](./docs/Diagrama%20MER.md) | Modelo Entidade-Relacionamento com herança e PostGIS |
 | [Diagramas de Fluxo](./docs/Diagramas%20de%20Fluxo.md) | Fluxos de triagem, cron jobs, autenticação e cálculo SIRI |
 | [Limitações e Premissas](./docs/Limitações%20e%20Premissas.md) | Restrições técnicas e financeiras do sistema |
+| [Evidências de Execução](./docs/prints/) | Prints de Evidências do projeto na Nuvem |
 
 ---
 
